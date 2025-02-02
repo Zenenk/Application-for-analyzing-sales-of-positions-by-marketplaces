@@ -1,0 +1,8 @@
+Flask==2.2.2
+selenium==4.10.0
+beautifulsoup4==4.11.1
+scrapy==2.8.0
+opencv-python==4.5.5.64
+pytesseract==0.3.8
+SQLAlchemy==1.4.44
+reportlab==3.6.12
