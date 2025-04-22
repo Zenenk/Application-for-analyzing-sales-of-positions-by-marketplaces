@@ -2,7 +2,7 @@ import unittest
 import os
 import cv2
 import numpy as np
-from app.promo_detector import PromoDetector
+from backend.promo_detector import PromoDetector
 
 class DummyModel:
     def predict(self, image):

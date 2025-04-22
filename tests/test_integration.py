@@ -1,6 +1,6 @@
 import unittest
 import json
-from app.app import app
+from backend.app import app
 
 class IntegrationTest(unittest.TestCase):
     def setUp(self):

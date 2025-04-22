@@ -1,6 +1,6 @@
 import unittest
 import os
-from app.exporter import export_to_csv, export_to_pdf
+from backend.exporter import export_to_csv, export_to_pdf
 
 class TestExporter(unittest.TestCase):
     def setUp(self):

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from app.scraper import scrape_marketplace
+from backend.scraper import scrape_marketplace
 
 # Класс-заменитель драйвера для тестирования
 class DummyDriver:

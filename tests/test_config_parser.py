@@ -1,6 +1,6 @@
 import unittest
 import os
-from app.config_parser import read_config
+from backend.config_parser import read_config
 
 class TestConfigParser(unittest.TestCase):
     def setUp(self):

@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify, send_file
-from app.config_parser import read_config
-from app.scraper import scrape_marketplace
-from app.database import init_db, add_product, get_products
-from app.exporter import export_to_csv, export_to_pdf
-from app.analysis import compare_product_data
+from backend.config_parser import read_config
+from backend.scraper import scrape_marketplace
+from backend.database import init_db, add_product, get_products
+from backend.exporter import export_to_csv, export_to_pdf
+from backend.analysis import compare_product_data
 import os
 
 app = Flask(__name__)
@@ -46,7 +46,7 @@ def start_analysis():
         all_products.extend(products)
     
     # Анализ первого изображения каждого товара с помощью promo_detector
-    from app.promo_detector import PromoDetector
+    from backend.promo_detector import PromoDetector
     import requests, tempfile
     promo_detector = PromoDetector()
     for product in all_products:

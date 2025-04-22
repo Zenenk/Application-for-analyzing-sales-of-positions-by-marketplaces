@@ -1,7 +1,7 @@
 import unittest
 import cv2
 import numpy as np
-from app.ocr import ocr_image
+from backend.ocr import ocr_image
 import os
 
 class TestOCR(unittest.TestCase):

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import cv2
 import numpy as np
-from app.ocr import ocr_image
+from backend.ocr import ocr_image
 
 class PromoDetector:
     def __init__(self, model_path=None):
