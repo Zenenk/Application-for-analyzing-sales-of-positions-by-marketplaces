@@ -1,59 +1,43 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-import datetime
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
-DATABASE_URL = "sqlite:///marketplace.db"
+db = SQLAlchemy()
 
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine)
-Base = declarative_base()
+class MarketplaceItem(db.Model):
+    __tablename__ = 'marketplace_item'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(256), nullable=False)
+    marketplace = db.Column(db.String(64), nullable=False)
+    identifier = db.Column(db.String(128), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-class Product(Base):
-    __tablename__ = "products"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    article = Column(String, nullable=False)
-    price = Column(String, nullable=False)
-    quantity = Column(String, nullable=False)
-    image_url = Column(String)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+class PriceRecord(db.Model):
+    __tablename__ = 'price_record'
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('marketplace_item.id'), nullable=False)
+    price = db.Column(db.Float, nullable=False)
+    old_price = db.Column(db.Float)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    promotion = db.Column(db.Boolean, default=False)
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    db.create_all()
 
-def add_product(product_data):
-    """
-    Добавляет запись о продукте в базу данных.
-    
-    product_data: словарь с ключами name, article, price, quantity, image_url.
-    """
-    session = SessionLocal()
-    product = Product(**product_data)
-    session.add(product)
-    session.commit()
-    session.refresh(product)
-    session.close()
-    return product
-
-def get_products():
-    """
-    Возвращает список всех продуктов из базы.
-    """
-    session = SessionLocal()
-    products = session.query(Product).all()
-    session.close()
-    return products
-
-if __name__ == "__main__":
-    init_db()
-    sample_product = {
-        "name": "Хлебцы гречневые",
-        "article": "ART123",
-        "price": "100 руб.",
-        "quantity": "20",
-        "image_url": "http://example.com/image1.jpg"
+def add_item_to_db(data):
+    item = MarketplaceItem(
+        name=data.get('name'),
+        marketplace=data.get('marketplace'),
+        identifier=data.get('identifier')
+    )
+    db.session.add(item)
+    db.session.commit()
+    return {
+        'id': item.id,
+        'name': item.name,
+        'marketplace': item.marketplace,
+        'identifier': item.identifier
     }
-    added = add_product(sample_product)
-    print("Добавлен продукт:", added.name)
+
+def get_all_items():
+    items = MarketplaceItem.query.all()
+    return [{'id': item.id, 'name': item.name, 'marketplace': item.marketplace, 'identifier': item.identifier} for item in items]

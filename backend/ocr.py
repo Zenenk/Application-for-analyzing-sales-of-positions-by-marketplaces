@@ -1,26 +1,20 @@
 import cv2
 import pytesseract
+import numpy as np
+from loguru import logger
 
-def ocr_image(image_path):
-    """
-    Распознавание текста на изображении.
-    
-    Аргументы:
-      - image_path: путь к изображению.
-      
-    Возвращает распознанный текст.
-    """
+def preprocess_image(image_path):
     image = cv2.imread(image_path)
     if image is None:
-        raise ValueError("Изображение не найдено по указанному пути")
-    
-    # Предобработка: конвертация в оттенки серого и бинаризация
+        logger.error(f"Не удалось открыть изображение {image_path}")
+        return None
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-    
-    text = pytesseract.image_to_string(thresh, lang="rus+eng")
-    return text.strip()
+    ret, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    return thresh
 
-if __name__ == "__main__":
-    text = ocr_image("sample_product.jpg")
-    print("Распознанный текст:", text)
+def extract_text_from_image(image_path):
+    processed = preprocess_image(image_path)
+    if processed is not None:
+        text = pytesseract.image_to_string(processed, lang='rus+eng')
+        return text.strip()
+    return ""

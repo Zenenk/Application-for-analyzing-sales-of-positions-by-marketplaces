@@ -1,118 +1,98 @@
-from flask import Flask, request, jsonify, send_file
-from backend.config_parser import read_config
-from backend.scraper import scrape_marketplace
-from backend.database import init_db, add_product, get_products
-from backend.exporter import export_to_csv, export_to_pdf
-from backend.analysis import compare_product_data
+
+---
+
+#### backend/app.py
+```python
 import os
+from flask import Flask, jsonify, request, make_response, send_file
+from flask_sqlalchemy import SQLAlchemy
+from loguru import logger
+from flasgger import Swagger
+from database import db, init_db
+from config_parser import read_config
+from scraper import scrape_marketplace
+from analysis import analyze_changes
+from exporter import export_to_csv, export_to_pdf
+from schedule import start_scheduler
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///data/monitoring.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'super_secret_key')
+app.config['SWAGGER'] = {
+    "title": "Marketplace Monitoring API",
+    "uiversion": 3
+}
 
-init_db()
+db.init_app(app)
+swagger = Swagger(app)
 
-@app.route('/')
-def index():
-    return """
-    <h1>Приложение для анализа маркетплейсов</h1>
-    <form action="/start" method="post">
-      <label for="config_file">Путь к конфигурационному файлу:</label>
-      <input type="text" id="config_file" name="config_file" value="config/config.conf"><br><br>
-      <input type="submit" value="Начать анализ">
-    </form>
-    """
+with app.app_context():
+    init_db()
 
-@app.route('/start', methods=['POST'])
-def start_analysis():
-    config_file = request.form.get("config_file", "config/config.conf")
-    try:
-        settings = read_config(config_file)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-    
-    search_settings = settings.get("SEARCH", {})
-    urls = search_settings.get("urls", "")
-    if not urls:
-        return jsonify({"error": "Не указаны URL в конфигурационном файле"}), 400
-    url_list = [url.strip() for url in urls.split(",")]
-    category_filter = [cat.strip() for cat in search_settings.get("categories", "").split(",")]
-    article_filter = []
-    
-    all_products = []
-    for url in url_list:
-        products = scrape_marketplace(url, category_filter=category_filter, article_filter=article_filter)
-        if settings.get("EXPORT", {}).get("save_to_db", "False").lower() == "true":
-            for product in products:
-                add_product(product)
-        all_products.extend(products)
-    
-    # Анализ первого изображения каждого товара с помощью promo_detector
-    from backend.promo_detector import PromoDetector
-    import requests, tempfile
-    promo_detector = PromoDetector()
-    for product in all_products:
-        if product.get("image_url"):
-            try:
-                response = requests.get(product["image_url"])
-                if response.status_code == 200:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
-                        tmp_file.write(response.content)
-                        tmp_file_path = tmp_file.name
-                    promotion_result = promo_detector.predict_promotion(tmp_file_path)
-                    product["promotion_analysis"] = promotion_result
-                    os.remove(tmp_file_path)
-                else:
-                    product["promotion_analysis"] = {"error": "Не удалось загрузить изображение"}
-            except Exception as e:
-                product["promotion_analysis"] = {"error": str(e)}
-        else:
-            product["promotion_analysis"] = {"error": "Изображение отсутствует"}
-    
-    # Сравнение двух последних товаров
-    analysis_result = {}
-    if len(all_products) >= 2:
-        analysis_result = compare_product_data(all_products[-2], all_products[-1])
-    
-    # Экспорт результатов
-    csv_filename = "exported_products.csv"
-    pdf_filename = "exported_products.pdf"
-    export_to_csv(all_products, csv_filename)
-    export_to_pdf(all_products, pdf_filename)
-    
-    return jsonify({
-        "products": all_products,
-        "analysis": analysis_result,
-        "csv_file": csv_filename,
-        "pdf_file": pdf_filename
-    })
+# Простой API-токен для защиты (проверяем в каждом запросе)
+def check_api_token():
+    token = request.headers.get('Authorization')
+    if not token or token.split(" ")[-1] != os.getenv('API_TOKEN'):
+        return False
+    return True
 
-@app.route('/download/<file_type>', methods=['GET'])
-def download_file(file_type):
-    if file_type == "csv":
-        filename = "exported_products.csv"
-    elif file_type == "pdf":
-        filename = "exported_products.pdf"
-    else:
-        return jsonify({"error": "Неверный тип файла"}), 400
-    
-    if not os.path.exists(filename):
-        return jsonify({"error": "Файл не найден"}), 404
-    return send_file(filename, as_attachment=True)
+@app.before_request
+def before_request():
+    # Для публичных эндпоинтов можно исключить проверку, здесь проверяем все
+    if not check_api_token():
+        return jsonify({'error': 'Unauthorized'}), 401
 
-@app.route('/products', methods=['GET'])
-def list_products():
-    products = get_products()
-    products_list = []
-    for p in products:
-        products_list.append({
-            "id": p.id,
-            "name": p.name,
-            "article": p.article,
-            "price": p.price,
-            "quantity": p.quantity,
-            "image_url": p.image_url,
-            "timestamp": p.timestamp.isoformat()
-        })
-    return jsonify(products_list)
+@app.route('/api/items', methods=['GET'])
+def get_items():
+    # Получение списка товаров (реализовано в database.py)
+    from database import get_all_items
+    items = get_all_items()
+    return jsonify(items)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+@app.route('/api/items', methods=['POST'])
+def add_item():
+    # Добавление нового товара для мониторинга
+    data = request.get_json()
+    from database import add_item_to_db
+    item = add_item_to_db(data)
+    return jsonify(item), 201
+
+@app.route('/api/export/csv', methods=['GET'])
+def download_csv():
+    csv_path = export_to_csv()
+    return send_file(csv_path, as_attachment=True, download_name="report.csv", mimetype='text/csv')
+
+@app.route('/api/export/pdf', methods=['GET'])
+def download_pdf():
+    pdf_path = export_to_pdf()
+    return send_file(pdf_path, as_attachment=True, download_name="report.pdf", mimetype='application/pdf')
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    config = read_config('config/monitoring.yaml')
+    return jsonify(config)
+
+@app.route('/api/config', methods=['PUT'])
+def update_config():
+    new_config = request.get_json()
+    # Запись в файл (упрощённая реализация)
+    import yaml
+    with open('config/monitoring.yaml', 'w', encoding='utf-8') as f:
+        yaml.safe_dump(new_config, f, allow_unicode=True)
+    return jsonify(new_config)
+
+@app.route('/api/analysis', methods=['POST'])
+def run_analysis():
+    # Выполнить сбор и анализ данных
+    config = read_config('config/monitoring.yaml')
+    logger.info("Начало сбора данных")
+    results = scrape_marketplace(config)
+    analysis = analyze_changes(results)
+    # Можно сохранить результаты анализа в базу
+    return jsonify({'results': results, 'analysis': analysis})
+
+if __name__ == '__main__':
+    # Запуск планировщика для автоматического сбора данных
+    start_scheduler(app)
+    app.run(host='0.0.0.0', port=5000)

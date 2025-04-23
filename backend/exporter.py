@@ -1,48 +1,35 @@
 import csv
-from reportlab.lib.pagesizes import letter
+import os
+import io
+from datetime import datetime
 from reportlab.pdfgen import canvas
 
-def export_to_csv(products, filename):
-    """
-    Экспортирует список продуктов в CSV файл.
-    
-    Аргументы:
-      - products: список словарей с данными товаров.
-      - filename: имя файла для сохранения.
-    """
-    with open(filename, mode="w", newline="", encoding="utf-8") as csv_file:
-        fieldnames = ["name", "article", "price", "quantity", "image_url"]
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-        writer.writeheader()
-        for product in products:
-            writer.writerow(product)
-
-def export_to_pdf(products, filename):
-    """
-    Экспортирует список продуктов в PDF файл.
-    
-    Аргументы:
-      - products: список словарей с данными товаров.
-      - filename: имя файла для сохранения.
-    """
-    c = canvas.Canvas(filename, pagesize=letter)
-    width, height = letter
-    y = height - 50
-    c.setFont("Helvetica", 12)
-    for product in products:
-        text = f"Название: {product['name']}, Артикул: {product['article']}, Цена: {product['price']}, Остаток: {product['quantity']}"
-        c.drawString(50, y, text)
-        y -= 20
-        if y < 50:
-            c.showPage()
-            y = height - 50
-    c.save()
-
-if __name__ == "__main__":
-    sample_products = [
-        {"name": "Хлебцы гречневые", "article": "ART123", "price": "100 руб.", "quantity": "20", "image_url": "http://example.com/image1.jpg"},
-        {"name": "Продукт 2", "article": "ART456", "price": "200 руб.", "quantity": "15", "image_url": "http://example.com/image2.jpg"}
+def export_to_csv():
+    # Здесь реализована демо-экспортовая логика – нужно заменить на выборку из БД
+    data = [
+        {'name': 'Товар 1', 'price': 100, 'marketplace': 'Ozon'},
+        {'name': 'Товар 2', 'price': 200, 'marketplace': 'Wildberries'}
     ]
-    export_to_csv(sample_products, "products.csv")
-    export_to_pdf(sample_products, "products.pdf")
-    print("Экспорт завершен")
+    csv_file = f'exports/report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    os.makedirs('exports', exist_ok=True)
+    with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=['name', 'price', 'marketplace'])
+        writer.writeheader()
+        for row in data:
+            writer.writerow(row)
+    return csv_file
+
+def export_to_pdf():
+    pdf_file = f'exports/report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
+    os.makedirs('exports', exist_ok=True)
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer)
+    c.drawString(50, 800, "Отчёт по мониторингу маркетплейсов")
+    c.drawString(50, 780, "Демо-данные:")
+    c.drawString(50, 760, "Товар 1 - 100 руб (Ozon)")
+    c.drawString(50, 740, "Товар 2 - 200 руб (Wildberries)")
+    c.showPage()
+    c.save()
+    with open(pdf_file, 'wb') as f:
+        f.write(buffer.getvalue())
+    return pdf_file

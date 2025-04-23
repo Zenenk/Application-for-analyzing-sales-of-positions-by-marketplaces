@@ -1,0 +1,72 @@
+openapi: 3.0.1
+info:
+  title: Marketplace Monitoring API
+  version: "1.0"
+servers:
+  - url: http://localhost:5000/api
+paths:
+  /items:
+    get:
+      summary: Получение списка отслеживаемых товаров
+      responses:
+        '200':
+          description: Список товаров
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Item'
+    post:
+      summary: Добавление нового товара для мониторинга
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewItem'
+      responses:
+        '201':
+          description: Товар добавлен
+  /export/csv:
+    get:
+      summary: Выгрузка данных в CSV
+      responses:
+        '200':
+          description: CSV-файл с данными
+  /export/pdf:
+    get:
+      summary: Генерация PDF-отчёта
+      responses:
+        '200':
+          description: PDF-файл с отчётом
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        marketplace:
+          type: string
+        price:
+          type: number
+        last_update:
+          type: string
+    NewItem:
+      type: object
+      properties:
+        name:
+          type: string
+        marketplace:
+          type: string
+        identifier:
+          type: string
+        schedule:
+          type: string
+      required:
+        - name
+        - marketplace
+        - identifier
