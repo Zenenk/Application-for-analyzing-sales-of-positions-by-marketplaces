@@ -1,35 +1,64 @@
+"""Exporter module for saving analysis results to files (CSV or PDF)."""
 import csv
-import os
-import io
-from datetime import datetime
-from reportlab.pdfgen import canvas
+from fpdf import FPDF
+from backend import database, analysis
 
-def export_to_csv():
-    # Здесь реализована демо-экспортовая логика – нужно заменить на выборку из БД
-    data = [
-        {'name': 'Товар 1', 'price': 100, 'marketplace': 'Ozon'},
-        {'name': 'Товар 2', 'price': 200, 'marketplace': 'Wildberries'}
-    ]
-    csv_file = f'exports/report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-    os.makedirs('exports', exist_ok=True)
-    with open(csv_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=['name', 'price', 'marketplace'])
-        writer.writeheader()
-        for row in data:
-            writer.writerow(row)
-    return csv_file
-
-def export_to_pdf():
-    pdf_file = f'exports/report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf'
-    os.makedirs('exports', exist_ok=True)
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer)
-    c.drawString(50, 800, "Отчёт по мониторингу маркетплейсов")
-    c.drawString(50, 780, "Демо-данные:")
-    c.drawString(50, 760, "Товар 1 - 100 руб (Ozon)")
-    c.drawString(50, 740, "Товар 2 - 200 руб (Wildberries)")
-    c.showPage()
-    c.save()
-    with open(pdf_file, 'wb') as f:
-        f.write(buffer.getvalue())
-    return pdf_file
+def export_all(fmt: str = "csv") -> str:
+    """Экспортирует все товары и их историю в файл указанного формата.
+    Возвращает путь к созданному файлу, либо None при ошибке.
+    """
+    products = database.get_all_products()
+    if fmt == "csv":
+        filename = "export_results.csv"
+        try:
+            with open(filename, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                # Заголовок CSV
+                writer.writerow(["Product ID", "Marketplace", "Title", "Current Price", "Current Stock", 
+                                 "In Promo", "Price Change (%)", "Min Price", "Max Price", "Stock Change"])
+                for product in products:
+                    history = [h.to_dict() for h in database.get_history(product.id)]
+                    trends = analysis.compute_trends(history)
+                    writer.writerow([
+                        product.id,
+                        product.marketplace,
+                        product.title,
+                        product.price,
+                        product.stock if product.stock is not None else "",
+                        "Yes" if product.in_promo else "No",
+                        trends.get("price_change_pct", ""),
+                        trends.get("min_price", ""),
+                        trends.get("max_price", ""),
+                        trends.get("stock_change", "")
+                    ])
+            return filename
+        except Exception as e:
+            print(f"CSV export failed: {e}")
+            return None
+    elif fmt == "pdf":
+        filename = "export_results.pdf"
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(0, 10, "Marketplace Analysis Export", ln=1, align='C')
+            pdf.set_font("Arial", size=10)
+            for product in products:
+                history = [h.to_dict() for h in database.get_history(product.id)]
+                trends = analysis.compute_trends(history)
+                # Добавляем информацию о каждом продукте
+                pdf.cell(0, 10, f"[{product.marketplace}] {product.title}", ln=1)
+                pdf.cell(0, 8, f"Current price: {product.price} | Stock: {product.stock} | In promo: {product.in_promo}", ln=1)
+                if trends:
+                    pdf.cell(0, 8, f"Price change: {trends.get('price_change_pct', 'N/A')}% (min {trends.get('min_price')} - max {trends.get('max_price')})", ln=1)
+                    if "stock_change" in trends:
+                        pdf.cell(0, 8, f"Stock change: {trends['stock_change']} (from {trends['initial_stock']} to {trends['latest_stock']})", ln=1)
+                pdf.ln(5)  # пустая строка между продуктами
+            pdf.output(filename)
+            return filename
+        except Exception as e:
+            print(f"PDF export failed: {e}")
+            return None
+    else:
+        # Неподдерживаемый формат
+        return None

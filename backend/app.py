@@ -1,8 +1,3 @@
-
----
-
-#### backend/app.py
-```python
 import os
 from flask import Flask, jsonify, request, make_response, send_file
 from flask_sqlalchemy import SQLAlchemy

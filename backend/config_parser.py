@@ -1,6 +1,14 @@
-import yaml
+"""Utility to parse configuration from environment or files."""
+import os
+from dotenv import load_dotenv
 
-def read_config(file_path):
-    with open(file_path, encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-    return config
+# Загружаем .env файл, если он существует
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+
+def get_token():
+    """Возвращает токен API из переменной окружения."""
+    return os.getenv("API_TOKEN")
+
+def get_database_path():
+    """Возвращает путь к файлу базы данных (SQLite) из переменной окружения или значение по умолчанию."""
+    return os.getenv("DATABASE_PATH", "data.sqlite")
