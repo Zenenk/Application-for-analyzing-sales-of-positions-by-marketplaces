@@ -1,12 +1,33 @@
-from exporter import export_to_csv, export_to_pdf
+import unittest
 import os
+from backend.exporter import export_to_csv, export_to_pdf
 
-def test_export_to_csv():
-    csv_path = export_to_csv()
-    assert os.path.exists(csv_path)
-    os.remove(csv_path)
+class TestExporter(unittest.TestCase):
+    def setUp(self):
+        # Данные для экспорта
+        self.products = [
+            {"name": "Тест1", "article": "A1", "price": "100 руб.", "quantity": "10", "image_url": "http://example.com/1.jpg"},
+            {"name": "Тест2", "article": "A2", "price": "200 руб.", "quantity": "5",  "image_url": "http://example.com/2.jpg"}
+        ]
+        self.csv_filename = "test_products.csv"
+        self.pdf_filename = "test_products.pdf"
 
-def test_export_to_pdf():
-    pdf_path = export_to_pdf()
-    assert os.path.exists(pdf_path)
-    os.remove(pdf_path)
+    def tearDown(self):
+        # Удаляем созданные файлы после тестов
+        if os.path.exists(self.csv_filename):
+            os.remove(self.csv_filename)
+        if os.path.exists(self.pdf_filename):
+            os.remove(self.pdf_filename)
+
+    def test_export_to_csv(self):
+        export_to_csv(self.products, self.csv_filename)
+        # Проверяем, что CSV файл создан
+        self.assertTrue(os.path.exists(self.csv_filename))
+
+    def test_export_to_pdf(self):
+        export_to_pdf(self.products, self.pdf_filename)
+        # Проверяем, что PDF файл создан
+        self.assertTrue(os.path.exists(self.pdf_filename))
+
+if __name__ == "__main__":
+    unittest.main()

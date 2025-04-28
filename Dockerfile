@@ -1,37 +1,28 @@
+# Используем официальный образ Python 3.10 (slim для меньшего размера)
+FROM python:3.10-slim
 
----
-
-#### Dockerfile (корневой)
-```Dockerfile
-# Stage 1: Сборка frontend
-FROM node:16-alpine as build-frontend
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend/ .
-RUN npm run build
-
-# Stage 2: Сборка backend
-FROM python:3.9-slim
-
-# Установка системных зависимостей
+# Устанавливаем необходимые системные зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget unzip \
+    # Для Tesseract OCR:
     tesseract-ocr tesseract-ocr-rus \
-    chromium-browser libsm6 libxext6 libxrender1 && \
-    rm -rf /var/lib/apt/lists/*
+    # Для Selenium (Chrome):
+    chromium-driver chromium \
+    # Прочие зависимости для OpenCV и браузера:
+    libgl1 libglib2.0-0 libxrender1 libsm6 libxext6 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Установка ChromeDriver
-RUN wget -q https://chromedriver.storage.googleapis.com/110.0.5481.77/chromedriver_linux64.zip -O /tmp/chromedriver.zip && \
-    unzip /tmp/chromedriver.zip -d /usr/local/bin && \
-    rm /tmp/chromedriver.zip && \
-    chmod +x /usr/local/bin/chromedriver
-
+# Устанавливаем рабочую директорию
 WORKDIR /app
-COPY backend/ ./backend/
-COPY --from=build-frontend /app/frontend/build ./backend/static
-WORKDIR /app/backend
+
+# Копируем файлы зависимостей и устанавливаем pip-зависимости
+COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Копируем весь проект в контейнер
+COPY . /app
+
+# Указываем порт для Flask
 EXPOSE 5000
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app"]
+
+# Запускаем приложение
+CMD ["python", "-u", "backend/app.py"]

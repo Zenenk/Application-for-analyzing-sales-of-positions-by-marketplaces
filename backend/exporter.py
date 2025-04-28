@@ -1,64 +1,54 @@
-"""Exporter module for saving analysis results to files (CSV or PDF)."""
+"""
+Модуль экспорта списка продуктов в файлы (CSV и PDF).
+"""
 import csv
-from fpdf import FPDF
-from backend import database, analysis
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
-def export_all(fmt: str = "csv") -> str:
-    """Экспортирует все товары и их историю в файл указанного формата.
-    Возвращает путь к созданному файлу, либо None при ошибке.
+def export_to_csv(products, filename):
     """
-    products = database.get_all_products()
-    if fmt == "csv":
-        filename = "export_results.csv"
-        try:
-            with open(filename, mode="w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                # Заголовок CSV
-                writer.writerow(["Product ID", "Marketplace", "Title", "Current Price", "Current Stock", 
-                                 "In Promo", "Price Change (%)", "Min Price", "Max Price", "Stock Change"])
-                for product in products:
-                    history = [h.to_dict() for h in database.get_history(product.id)]
-                    trends = analysis.compute_trends(history)
-                    writer.writerow([
-                        product.id,
-                        product.marketplace,
-                        product.title,
-                        product.price,
-                        product.stock if product.stock is not None else "",
-                        "Yes" if product.in_promo else "No",
-                        trends.get("price_change_pct", ""),
-                        trends.get("min_price", ""),
-                        trends.get("max_price", ""),
-                        trends.get("stock_change", "")
-                    ])
-            return filename
-        except Exception as e:
-            print(f"CSV export failed: {e}")
-            return None
-    elif fmt == "pdf":
-        filename = "export_results.pdf"
-        try:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 10, "Marketplace Analysis Export", ln=1, align='C')
-            pdf.set_font("Arial", size=10)
-            for product in products:
-                history = [h.to_dict() for h in database.get_history(product.id)]
-                trends = analysis.compute_trends(history)
-                # Добавляем информацию о каждом продукте
-                pdf.cell(0, 10, f"[{product.marketplace}] {product.title}", ln=1)
-                pdf.cell(0, 8, f"Current price: {product.price} | Stock: {product.stock} | In promo: {product.in_promo}", ln=1)
-                if trends:
-                    pdf.cell(0, 8, f"Price change: {trends.get('price_change_pct', 'N/A')}% (min {trends.get('min_price')} - max {trends.get('max_price')})", ln=1)
-                    if "stock_change" in trends:
-                        pdf.cell(0, 8, f"Stock change: {trends['stock_change']} (from {trends['initial_stock']} to {trends['latest_stock']})", ln=1)
-                pdf.ln(5)  # пустая строка между продуктами
-            pdf.output(filename)
-            return filename
-        except Exception as e:
-            print(f"PDF export failed: {e}")
-            return None
-    else:
-        # Неподдерживаемый формат
-        return None
+    Экспортирует список продуктов (list of dicts) в CSV-файл.
+    Аргументы:
+      - products: список словарей с данными товаров.
+      - filename: имя CSV-файла для сохранения.
+    """
+    with open(filename, mode="w", newline="", encoding="utf-8") as csv_file:
+        fieldnames = ["name", "article", "price", "quantity", "image_url"]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for product in products:
+            writer.writerow(product)
+
+def export_to_pdf(products, filename):
+    """
+    Экспортирует список продуктов в PDF-файл.
+    Каждый продукт выводится отдельной строкой текста.
+    Аргументы:
+      - products: список словарей с данными товаров.
+      - filename: имя PDF-файла для сохранения.
+    """
+    c = canvas.Canvas(filename, pagesize=letter)
+    width, height = letter
+    y = height - 50  # начальная высота для первого элемента
+    c.setFont("Helvetica", 12)
+    for product in products:
+        text = (f"Название: {product.get('name', '')}, Артикул: {product.get('article', '')}, "
+                f"Цена: {product.get('price', '')}, Остаток: {product.get('quantity', '')}")
+        c.drawString(50, y, text)
+        y -= 20
+        # Если достигли нижней границы страницы, создаём новую страницу
+        if y < 50:
+            c.showPage()
+            c.setFont("Helvetica", 12)
+            y = height - 50
+    c.save()
+
+# Пример использования модулей экспорта
+if __name__ == "__main__":
+    sample_products = [
+        {"name": "Хлебцы гречневые", "article": "ART123", "price": "100 руб.", "quantity": "20", "image_url": "http://example.com/image1.jpg"},
+        {"name": "Продукт 2", "article": "ART456", "price": "200 руб.", "quantity": "15", "image_url": "http://example.com/image2.jpg"}
+    ]
+    export_to_csv(sample_products, "products.csv")
+    export_to_pdf(sample_products, "products.pdf")
+    print("Экспорт завершен.")

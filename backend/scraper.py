@@ -1,79 +1,73 @@
+"""
+Модуль для сбора данных (скрейпинга) с веб-страниц маркетплейсов.
+Использует Selenium (headless Chrome) для загрузки страниц и BeautifulSoup для парсинга HTML.
+"""
 import time
-import requests
-from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from loguru import logger
-from promo_detector import PromoDetector
+from bs4 import BeautifulSoup
 
 def init_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--incognito")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(options=options)
+    """Инициализирует headless Chrome WebDriver для Selenium."""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    driver = webdriver.Chrome(options=chrome_options)
     return driver
 
-def scrape_ozon(url, driver):
-    driver.get(url)
-    time.sleep(3)  # ожидание загрузки
-    page_source = driver.page_source
-    soup = BeautifulSoup(page_source, 'html.parser')
-    products = []
-    for card in soup.find_all('div', class_='product-card'):
-        name_tag = card.find('a', class_='product-card__title')
-        price_tag = card.find('span', class_='product-card__price')
-        image_tag = card.find('img')
-        if name_tag and price_tag and image_tag:
-            product = {
-                'name': name_tag.get_text(strip=True),
-                'price': float(price_tag.get_text(strip=True).replace('₽', '').replace(' ', '')),
-                'image_url': image_tag.get('src'),
-                'marketplace': 'Ozon'
-            }
-            # Применение промо-анализа (OCR+ML)
-            detector = PromoDetector()
-            product['promotion'] = detector.predict_promotion(product['image_url'])
-            products.append(product)
-    logger.info(f"Найдено товаров на Ozon: {len(products)}")
-    return products
-
-def scrape_wb(url, driver):
-    driver.get(url)
-    time.sleep(3)  # ожидание загрузки
-    page_source = driver.page_source
-    soup = BeautifulSoup(page_source, 'html.parser')
-    products = []
-    for card in soup.find_all('div', class_='product-card'):
-        name_tag = card.find('a', class_='product-card__title')
-        price_tag = card.find('ins', class_='lower-price')
-        image_tag = card.find('img')
-        if name_tag and price_tag and image_tag:
-            product = {
-                'name': name_tag.get_text(strip=True),
-                'price': float(price_tag.get_text(strip=True).replace('₽', '').replace(' ', '')),
-                'image_url': image_tag.get('src'),
-                'marketplace': 'Wildberries'
-            }
-            detector = PromoDetector()
-            product['promotion'] = detector.predict_promotion(product['image_url'])
-            products.append(product)
-    logger.info(f"Найдено товаров на Wildberries: {len(products)}")
-    return products
-
-def scrape_marketplace(config):
+def scrape_marketplace(url, category_filter=None, article_filter=None):
+    """
+    Собирает данные о продуктах с страницы маркетплейса по заданному URL.
+    Аргументы:
+      - url: URL страницы категории маркетплейса.
+      - category_filter: список строк (категорий/слов), товары без которых будут отфильтрованы по имени.
+      - article_filter: список строк (артикулов или их частей), для фильтрации по артикулу.
+    Возвращает список словарей с данными товаров:
+      {
+        "name": "...",
+        "article": "...",
+        "price": "...",
+        "quantity": "...",
+        "image_url": "..."
+      }
+    """
     driver = init_driver()
-    all_products = []
-    for entry in config.get('items', []):
-        url = entry.get('identifier')
-        if 'ozon' in url.lower():
-            products = scrape_ozon(url, driver)
-        elif 'wildberries' in url.lower():
-            products = scrape_wb(url, driver)
-        else:
-            # Для Yandex.Market или других площадок – базовая реализация
-            products = []
-        all_products.extend(products)
+    driver.get(url)
+    # Ждём некоторое время для загрузки динамического контента
+    time.sleep(3)
+    html = driver.page_source
+    soup = BeautifulSoup(html, "html.parser")
+    products = []
+    product_cards = soup.find_all("div", class_="product-card")
+    for card in product_cards:
+        name = card.find("h2", class_="product-name")
+        name = name.text.strip() if name else "Нет названия"
+        article = card.get("data-article", "Нет артикула")
+        price_tag = card.find("span", class_="product-price")
+        price = price_tag.text.strip() if price_tag else "0"
+        quantity_tag = card.find("span", class_="product-quantity")
+        quantity = quantity_tag.text.strip() if quantity_tag else "0"
+        img_tag = card.find("img", class_="product-image")
+        image_url = img_tag["src"] if img_tag else ""
+        # Применяем фильтры, если заданы
+        if category_filter and not any(cat.lower() in name.lower() for cat in category_filter):
+            continue
+        if article_filter and not any(art.lower() in article.lower() for art in article_filter):
+            continue
+        products.append({
+            "name": name,
+            "article": article,
+            "price": price,
+            "quantity": quantity,
+            "image_url": image_url
+        })
     driver.quit()
-    return all_products
+    return products
+
+# Пример использования скрейпера
+if __name__ == "__main__":
+    example_url = "https://www.ozon.ru/category/produkty"
+    scraped_products = scrape_marketplace(example_url, category_filter=["хлебцы"], article_filter=["гречневые"])
+    for prod in scraped_products:
+        print(prod)

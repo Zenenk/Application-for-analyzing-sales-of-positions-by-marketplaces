@@ -1,72 +1,170 @@
-openapi: 3.0.1
+openapi: 3.0.0
 info:
-  title: Marketplace Monitoring API
-  version: "1.0"
+  title: API для приложения анализа маркетплейсов
+  version: "1.0.0"
+  description: |
+    Данный API позволяет запускать анализ данных с маркетплейсов, получать результаты и скачивать отчёты.
 servers:
-  - url: http://localhost:5000/api
+  - url: http://localhost:5000
+
 paths:
-  /items:
-    get:
-      summary: Получение списка отслеживаемых товаров
+  /start:
+    post:
+      summary: Запустить анализ по конфигурационному файлу
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                config_file:
+                  type: string
+                  description: Путь к конфигурационному .conf файлу
+                  default: config/config.conf
       responses:
-        '200':
-          description: Список товаров
+        "200":
+          description: Результаты анализа в JSON
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductResult'
+                  analysis:
+                    $ref: '#/components/schemas/ComparisonAnalysis'
+                  csv_file:
+                    type: string
+                    description: Имя CSV-файла с экспортированными данными
+                  pdf_file:
+                    type: string
+                    description: Имя PDF-файла с экспортированными данными
+        "400":
+          description: Ошибка в запросе (например, отсутствует конфигурация)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Сообщение об ошибке
+  /products:
+    get:
+      summary: Получить все продукты из базы данных
+      responses:
+        "200":
+          description: Список продуктов из базы
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Item'
-    post:
-      summary: Добавление нового товара для мониторинга
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NewItem'
-      responses:
-        '201':
-          description: Товар добавлен
-  /export/csv:
+                  $ref: '#/components/schemas/ProductDB'
+  /download/{file_type}:
     get:
-      summary: Выгрузка данных в CSV
+      summary: Скачать экспортированный файл
+      parameters:
+        - name: file_type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [csv, pdf]
+          description: Тип файла для скачивания (csv или pdf)
       responses:
-        '200':
-          description: CSV-файл с данными
-  /export/pdf:
-    get:
-      summary: Генерация PDF-отчёта
-      responses:
-        '200':
-          description: PDF-файл с отчётом
+        "200":
+          description: Успешное скачивание файла
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Файл не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Сообщение об ошибке
+        "400":
+          description: Неверный тип файла запрошен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
 components:
   schemas:
-    Item:
+    ProductResult:
+      type: object
+      properties:
+        name:
+          type: string
+        article:
+          type: string
+        price:
+          type: string
+        quantity:
+          type: string
+        image_url:
+          type: string
+        promotion_analysis:
+          type: object
+          properties:
+            promotion_detected:
+              type: boolean
+            promotion_probability:
+              type: number
+            ocr_text:
+              type: string
+            detected_keywords:
+              type: array
+              items:
+                type: string
+            error:
+              type: string
+              description: Сообщение об ошибке (если произошла ошибка при анализе)
+      description: Результат по конкретному продукту с анализом промо
+    ComparisonAnalysis:
+      type: object
+      properties:
+        price_change:
+          type: number
+          nullable: true
+          description: Изменение цены (может быть None, если не удалось вычислить)
+        quantity_change:
+          type: integer
+          nullable: true
+          description: Изменение количества (может быть None, если не удалось вычислить)
+        image_changed:
+          type: boolean
+          description: Изменилось ли изображение
+      description: Сравнение двух последних товаров
+    ProductDB:
       type: object
       properties:
         id:
           type: integer
         name:
           type: string
-        marketplace:
+        article:
           type: string
         price:
-          type: number
-        last_update:
           type: string
-    NewItem:
-      type: object
-      properties:
-        name:
+        quantity:
           type: string
-        marketplace:
+        image_url:
           type: string
-        identifier:
+        timestamp:
           type: string
-        schedule:
-          type: string
-      required:
-        - name
-        - marketplace
-        - identifier
+          format: date-time
+      description: Запись о продукте из базы данных

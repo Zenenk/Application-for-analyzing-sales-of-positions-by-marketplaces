@@ -1,22 +1,22 @@
 version: '3.8'
 services:
-  web:
+  backend:
     build: .
-    container_name: marketplace_monitoring_web
-    environment:
-      - FLASK_ENV=production
-      - API_TOKEN=your_api_token_here
-      - DATABASE_URL=sqlite:///data/monitoring.db
-    volumes:
-      - ./data:/app/data
-      - ./backend/logs:/app/backend/logs
     ports:
       - "5000:5000"
-  frontend:
-    build:
-      context: ./frontend
-    container_name: marketplace_monitoring_frontend
-    ports:
-      - "80:80"
+    environment:
+      # Переменная для использования Postgres вместо SQLite
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/postgres
     depends_on:
-      - web
+      - db
+
+  db:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

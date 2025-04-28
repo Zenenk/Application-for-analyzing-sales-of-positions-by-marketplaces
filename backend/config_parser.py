@@ -1,14 +1,40 @@
-"""Utility to parse configuration from environment or files."""
-import os
-from dotenv import load_dotenv
+"""
+Модуль для чтения конфигурационного файла .conf.
+"""
+import configparser
 
-# Загружаем .env файл, если он существует
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
+def read_config(config_file):
+    """
+    Читает конфигурационный файл (INI формат) и возвращает настройки в виде словаря.
+    
+    Аргументы:
+      - config_file: путь к .conf файлу.
+    
+    Ожидаемый формат конфигурационного файла:
+        [MARKETPLACES]
+        marketplaces = Ozon, Wildberries
 
-def get_token():
-    """Возвращает токен API из переменной окружения."""
-    return os.getenv("API_TOKEN")
+        [SEARCH]
+        categories = хлебцы, хлебцы гречневые
+        urls = https://... , https://...
+        time_range = 7
 
-def get_database_path():
-    """Возвращает путь к файлу базы данных (SQLite) из переменной окружения или значение по умолчанию."""
-    return os.getenv("DATABASE_PATH", "data.sqlite")
+        [EXPORT]
+        format = CSV
+        save_to_db = True
+
+    Возвращает:
+      - settings: словарь, где ключи - названия секций, 
+                  а значения - словари параметров из этой секции.
+    """
+    config = configparser.ConfigParser()
+    config.read(config_file, encoding='utf-8')
+    settings = {}
+    for section in config.sections():
+        settings[section] = dict(config.items(section))
+    return settings
+
+# Пример использования
+if __name__ == "__main__":
+    cfg = read_config("config/config.conf")
+    print(cfg)
