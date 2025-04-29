@@ -4,11 +4,7 @@ import cv2
 import os
 from backend.promo_detector import PromoDetector, DummyModel
 
-# Определяем DummyModel для использования в тестах (если не импортирован из модуля)
-# (В самом модуле PromoDetector уже определён DummyModel)
-# class DummyModel:
-#     def predict(self, image):
-#         return np.array([[0.8]])  # например, вероятность 0.8, обозначающая наличие акции
+# Определяем DummyModel для использования в тестах
 
 class TestPromoDetector(unittest.TestCase):
     def setUp(self):

@@ -43,7 +43,7 @@ class IntegrationTest(unittest.TestCase):
             product = data["products"][0]
             # Должен присутствовать ключ с результатом анализа промо-изображения
             self.assertIn("promotion_analysis", product)
-            # Если анализ выполнен без ошибки, проверяем наличие ожидаемых полей
+            # Проверяем наличие ожидаемых полей
             if "error" not in product["promotion_analysis"]:
                 self.assertIn("promotion_detected", product["promotion_analysis"])
                 self.assertIn("promotion_probability", product["promotion_analysis"])

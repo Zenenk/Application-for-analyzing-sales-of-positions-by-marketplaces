@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, send_file
 import os
-# Импортируем модули конфигурации и скрейпера как отдельные модули, чтобы можно было их легко мокировать в тестах
+# Импортируем модули конфигурации и скрейпера как отдельные модули
 import backend.config_parser as config_parser
 import backend.scraper as scraper
 from backend.database import init_db, add_product, get_products
@@ -30,7 +30,7 @@ def index():
 
 @app.route('/start', methods=['POST'])
 def start_analysis():
-    # Получаем путь до конфигурационного файла из формы (либо используем значение по умолчанию)
+    # Получаем путь до конфигурационного файла из формы
     config_path = request.form.get("config_file", "config/config.conf")
     try:
         settings = config_parser.read_config(config_path)

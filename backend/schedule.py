@@ -1,9 +1,8 @@
 """
 Модуль планировщика задач для регулярного запуска анализа.
-(На данный момент не интегрирован в основной поток приложения.)
 """
 import time
-# Библиотеку schedule можно использовать для планирования периодических задач:
+
 try:
     import schedule
 except ImportError:
@@ -11,7 +10,7 @@ except ImportError:
 
 def run_scheduled_analysis(config_path="config/config.conf"):
     from backend.app import app, config_parser, scraper, add_product, PromoDetector, compare_product_data, export_to_csv, export_to_pdf
-    # Этот примерный метод может запускаться по расписанию для автоматического сбора и анализа данных
+    
     with app.app_context():
         settings = config_parser.read_config(config_path)
         urls = settings.get("SEARCH", {}).get("urls", "")
@@ -48,8 +47,8 @@ def run_scheduled_analysis(config_path="config/config.conf"):
 
 if __name__ == "__main__":
     if schedule:
-        # Планируем ежедневный запуск анализа (пример: каждый день в 02:00)
-        schedule.every().day.at("02:00").do(run_scheduled_analysis)
+        # Планируем ежедневный запуск анализа (пример: каждый день в 06:00)
+        schedule.every().day.at("06:00").do(run_scheduled_analysis)
         print("Запущен планировщик. Ожидание заданных интервалов...")
         while True:
             schedule.run_pending()
