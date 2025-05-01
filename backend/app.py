@@ -7,14 +7,15 @@ from backend.database import init_db, add_product, get_products
 from backend.exporter import export_to_csv, export_to_pdf
 from backend.analysis import compare_product_data
 from backend.promo_detector import PromoDetector
-from loguru import logger
+from flask_cors import CORS
 
 # Создаем Flask-приложение
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+CORS(app, resources={r"/*": {"origins": os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")}})
 
 # Инициализируем базу данных
 init_db()
-logger.info("База данных инициализирована")
 
 @app.route('/')
 def index():
@@ -32,11 +33,12 @@ def index():
 def start_analysis():
     # Получаем путь до конфигурационного файла из формы
     config_path = request.form.get("config_file", "config/config.conf")
+    if not config_path or config_path.startswith("/") or ".." in config_path or not config_path.endswith(".conf"):
+        return jsonify({"error": "Недопустимый путь конфигурационного файла"}), 400
     try:
         settings = config_parser.read_config(config_path)
     except Exception as e:
         # Если файл не найден или произошла ошибка парсинга, возвращаем HTTP 400
-        logger.error(f"Ошибка чтения конфигурации: {e}")
         return jsonify({"error": f"Ошибка чтения конфигурации: {e}"}), 400
 
     search_settings = settings.get("SEARCH", {})

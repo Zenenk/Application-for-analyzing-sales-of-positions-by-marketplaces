@@ -1,14 +1,16 @@
 """
 Модуль для работы с базой данных (инициализация, функции добавления/получения данных).
-Поддерживает SQLite (по умолчанию) или PostgreSQL (если заданы переменные окружения).
+Используется PostgreSQL (URL подключения задаётся через переменную окружения DATABASE_URL).
 """
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend import models
 
-# Получаем URL базы из окружения или используем SQLite файл по умолчанию
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///marketplace.db")
+# Получаем URL базы данных из переменной окружения
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL не указана")
 
 # Создаем движок SQLAlchemy
 engine = create_engine(DATABASE_URL, echo=False)

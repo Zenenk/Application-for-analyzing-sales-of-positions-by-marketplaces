@@ -2,15 +2,14 @@ import unittest
 import numpy as np
 import cv2
 import os
-from backend.promo_detector import PromoDetector, DummyModel
+from backend.promo_detector import PromoDetector
 
 # Определяем DummyModel для использования в тестах
 
 class TestPromoDetector(unittest.TestCase):
     def setUp(self):
-        # Инициализируем PromoDetector и заменяем модель на DummyModel для детерминированного результата
+        # Инициализируем PromoDetector
         self.detector = PromoDetector()
-        self.detector.model = DummyModel()  # подмена модели на заглушку, возвращающую 0.5 (или 0.8, в зависимости от DummyModel)
         # Создаем тестовое изображение с текстом, содержащим промо-выражение "скидка -20%"
         self.test_image_path = "test_promo.jpg"
         img = np.ones((300, 300, 3), dtype=np.uint8) * 255  # белый фон
@@ -35,8 +34,6 @@ class TestPromoDetector(unittest.TestCase):
 
     def test_predict_promotion(self):
         result = self.detector.predict_promotion(self.test_image_path)
-        # Проверяем, что промо-акция обнаружена (DummyModel может возвращать 0.5, тогда promotion_detected False;
-        # Если DummyModel возвращает 0.8, то True. Здесь допустимо любое, мы проверим consistency.)
         self.assertIn("promotion_detected", result)
         self.assertGreaterEqual(result["promotion_probability"], 0.0)
         self.assertIsInstance(result["ocr_text"], str)

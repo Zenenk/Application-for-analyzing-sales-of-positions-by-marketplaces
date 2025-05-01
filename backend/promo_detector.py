@@ -7,7 +7,8 @@ import cv2
 from backend.ocr import ocr_image
 
 try:
-    import tensorflow as tf
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
 except ImportError:
     # Если TensorFlow не установлен, выбросить исключение при попытке использования
     tf = None
@@ -15,37 +16,19 @@ except ImportError:
 class PromoDetector:
     def __init__(self, model_path=None):
         """
-        Инициализирует детектор промо. Если указан путь к сохранённой модели (model_path), загрузит модель,
-        иначе создаст простую CNN-модель (необученную) для демо.
+        Инициализирует детектор промо.
+        Настраивает модель классификации текста (TF-IDF + LogisticRegression) для выявления промо-меток.
         """
-        if model_path and tf:
-            # Загрузка обученной модели из файла
-            self.model = tf.keras.models.load_model(model_path)
-        else:
-            # Создаем демо-модель (необученную) или заглушку, если TensorFlow недоступен
-            if tf:
-                self.model = self.build_dummy_model()
-            else:
-                # Если TensorFlow не доступен, используем простую заглушку
-                self.model = DummyModel()
-
-    def build_dummy_model(self):
-        """
-        Создаёт простую CNN Sequential модель в Keras для определения наличия промо-элементов.
-        (Демонстрационная модель с 1 выходом: вероятность наличия промо.)
-        """
-        model = tf.keras.models.Sequential([
-            tf.keras.layers.Conv2D(16, (3, 3), activation='relu', input_shape=(224, 224, 3)),
-            tf.keras.layers.MaxPooling2D(2, 2),
-            tf.keras.layers.Conv2D(32, (3, 3), activation='relu'),
-            tf.keras.layers.MaxPooling2D(2, 2),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(64, activation='relu'),
-            tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(1, activation='sigmoid')  # 1 выходной нейрон: вероятность акции
-        ])
-        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-        return model
+        # Инициализируем классификатор текста для промо-меток
+        self.vectorizer = TfidfVectorizer()
+        self.classifier = LogisticRegression(max_iter=1000)
+        # Обучаем модель классификации на примерах промо и без промо
+        promo_texts = ["скидка", "акция", "распродажа", "sale", "discount", "специальное предложение"]
+        nonpromo_texts = ["товар", "новинка", "описание", "в наличии", "на складе", "обычная цена"]
+        X_train = promo_texts + nonpromo_texts
+        y_train = [1]*len(promo_texts) + [0]*len(nonpromo_texts)
+        X_vectors = self.vectorizer.fit_transform(X_train)
+        self.classifier.fit(X_vectors, y_train)
 
     def preprocess_image(self, image_path):
         """
@@ -102,21 +85,20 @@ class PromoDetector:
           - ocr_text: распознанный текст.
           - detected_keywords: список ключевых слов, связанных с акциями.
         """
-        # Предобработка изображения
-        image = self.preprocess_image(image_path)
-        # Если TensorFlow недоступен, используем DummyModel
-        if tf is None and isinstance(self.model, DummyModel):
-            prob = self.model.predict(image)[0][0]
-        else:
-            prob = float(self.model.predict(image)[0][0])
-        promotion_detected = (prob > 0.5)
-        # Распознаем текст на изображении
+        # Распознаем текст на изображении (OCR)
         ocr_text = ""
         try:
             ocr_text = ocr_image(image_path)
         except Exception as e:
             ocr_text = ""
-        # Выделяем ключевые слова из OCR-текста
+        # Определяем вероятность промо-акции по распознанному тексту
+        if ocr_text:
+            X_test = self.vectorizer.transform([ocr_text])
+            prob = float(self.classifier.predict_proba(X_test)[0][1])
+        else:
+            prob = 0.0
+        promotion_detected = (prob > 0.5)
+        # Выделяем ключевые слова из текста
         detected_keywords = self.extract_keywords(ocr_text)
         return {
             "promotion_detected": promotion_detected,
@@ -124,12 +106,6 @@ class PromoDetector:
             "ocr_text": ocr_text,
             "detected_keywords": detected_keywords
         }
-
-# Дополнительный класс-заглушка для модели (используется при отсутствии TensorFlow)
-class DummyModel:
-    def predict(self, image):
-        # Возвращает фиксированную вероятность 0.5 (50%) в виде нужного формата массива
-        return np.array([[0.5]])
 
 # Тестирование PromoDetector в автономном режиме
 if __name__ == "__main__":
