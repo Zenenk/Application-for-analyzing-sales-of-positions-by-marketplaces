@@ -6,6 +6,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend import models
+from loguru import logger
 
 # Получаем URL базы данных из переменной окружения
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -51,8 +52,6 @@ def get_products():
     finally:
         session.close()
 
-# Импортируем логгер (Loguru) для сообщений, после определения функций чтобы избежать проблем импорта
-from loguru import logger
 
 # Если запускать модуль напрямую, выполним простой тест вставки
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from backend.exporter import export_to_csv, export_to_pdf
 from backend.analysis import compare_product_data
 from backend.promo_detector import PromoDetector
 from flask_cors import CORS
+from loguru import logger
 
 # Создаем Flask-приложение
 app = Flask(__name__)

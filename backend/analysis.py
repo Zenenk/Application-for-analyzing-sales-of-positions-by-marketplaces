@@ -2,7 +2,6 @@
 """
 Модуль анализа данных о продуктах
 """
-from loguru import logger
 
 def compare_product_data(old_data, new_data):
     """
@@ -40,7 +39,6 @@ def compare_product_data(old_data, new_data):
     result["image_changed"] = (old_data.get("image_url") != new_data.get("image_url"))
     return result
 
-# Пример самопроверки (при запуске модуля напрямую)
 if __name__ == "__main__":
     old = {"price": "100 руб.", "quantity": "20", "image_url": "http://example.com/image1.jpg"}
     new = {"price": "110 руб.", "quantity": "18", "image_url": "http://example.com/image2.jpg"}
