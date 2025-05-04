@@ -5,7 +5,7 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from backend import models
+import models
 from loguru import logger
 
 # Получаем URL базы данных из переменной окружения

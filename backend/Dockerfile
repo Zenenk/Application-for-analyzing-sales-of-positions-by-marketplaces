@@ -25,4 +25,4 @@ COPY . /app
 EXPOSE 5000
 
 # Запускаем приложение
-CMD ["python", "-u", "backend/app.py"]
+CMD ["python", "-u", "app.py"]

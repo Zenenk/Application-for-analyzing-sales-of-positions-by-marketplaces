@@ -15,7 +15,7 @@ services:
       # Переменная для подключения SQLAlchemy
       - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/postgres
     ports:
-      - "8000:5000"        # наружный порт 8000 → Flask 5000
+      - "5000:5000"        # наружный порт 8000 → Flask 5000
     depends_on:
       - db
     networks:

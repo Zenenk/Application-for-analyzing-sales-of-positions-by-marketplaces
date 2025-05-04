@@ -2,6 +2,7 @@
 """
 Модуль анализа данных о продуктах
 """
+from loguru import logger
 
 def compare_product_data(old_data, new_data):
     """

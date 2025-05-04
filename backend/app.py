@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify, send_file
 import os
 # Импортируем модули конфигурации и скрейпера как отдельные модули
-import backend.config_parser as config_parser
-import backend.scraper as scraper
-from backend.database import init_db, add_product, get_products
-from backend.exporter import export_to_csv, export_to_pdf
-from backend.analysis import compare_product_data
-from backend.promo_detector import PromoDetector
+import config_parser as config_parser
+import scraper as scraper
+from database import init_db, add_product, get_products
+from exporter import export_to_csv, export_to_pdf
+from analysis import compare_product_data
+from promo_detector import PromoDetector
 from flask_cors import CORS
 from loguru import logger
 
@@ -17,6 +17,10 @@ CORS(app, resources={r"/*": {"origins": os.getenv("ALLOWED_ORIGIN", "http://loca
 
 # Инициализируем базу данных
 init_db()
+@app.route('/health', methods=['GET'])
+def health():
+    """Health-check endpoint."""
+    return jsonify({"status": "ok"}), 200
 
 @app.route('/')
 def index():

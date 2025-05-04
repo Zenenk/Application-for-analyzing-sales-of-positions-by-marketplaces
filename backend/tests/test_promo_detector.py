@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import cv2
 import os
-from backend.promo_detector import PromoDetector
+from promo_detector import PromoDetector
 
 # Определяем DummyModel для использования в тестах
 

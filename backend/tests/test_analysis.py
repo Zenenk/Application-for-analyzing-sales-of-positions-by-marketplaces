@@ -1,5 +1,5 @@
 import unittest
-from backend.analysis import compare_product_data
+from analysis import compare_product_data
 
 class TestAnalysis(unittest.TestCase):
     def test_compare_product_data(self):

@@ -1,6 +1,6 @@
 import unittest
 import json
-from backend.app import app
+from app import app
 from unittest.mock import patch
 
 class IntegrationTest(unittest.TestCase):
