@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from scraper import scrape_marketplace
+from backend.scraper import scrape_marketplace
 
 # Класс-заглушка для имитации Selenium WebDriver
 class DummyDriver:

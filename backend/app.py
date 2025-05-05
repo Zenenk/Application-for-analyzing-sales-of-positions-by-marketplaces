@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify, send_file
 import os
 # Импортируем модули конфигурации и скрейпера как отдельные модули
-import config_parser as config_parser
-import scraper as scraper
-from database import init_db, add_product, get_products
-from exporter import export_to_csv, export_to_pdf
-from analysis import compare_product_data
-from promo_detector import PromoDetector
+import backend.config_parser as config_parser
+import backend.scraper as scraper
+from backend.database import init_db, add_product, get_products
+from backend.exporter import export_to_csv, export_to_pdf
+from backend.analysis import compare_product_data
+from backend.promo_detector import PromoDetector
 from flask_cors import CORS
 from loguru import logger
 
@@ -125,7 +125,7 @@ def start_analysis():
 
 @app.route('/download/<file_type>', methods=['GET'])
 def download_file(file_type):
-    # Эндпоинт для скачивания файлов экспорта
+     # Эндпоинт для скачивания файлов экспорта. Ищем только в текущей директории
     if file_type == "csv":
         filename = "exported_products.csv"
     elif file_type == "pdf":
@@ -133,11 +133,12 @@ def download_file(file_type):
     else:
         return jsonify({"error": "Неверный тип файла"}), 400
 
-    if not os.path.exists(filename):
+    path = os.path.join(os.getcwd(), filename)
+    if not os.path.exists(path):
         return jsonify({"error": "Файл не найден"}), 404
 
-    # Отправляем файл пользователю
-    return send_file(filename, as_attachment=True)
+    # Отправляем файл, имя вложения соответствует filename
+    return send_file(path, as_attachment=True, download_name=filename)
 
 @app.route('/products', methods=['GET'])
 def list_products():

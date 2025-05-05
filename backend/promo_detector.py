@@ -4,7 +4,7 @@
 """
 import numpy as np
 import cv2
-from ocr import ocr_image
+from backend.ocr import ocr_image
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer

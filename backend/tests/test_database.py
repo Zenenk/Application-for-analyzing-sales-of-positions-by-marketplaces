@@ -1,7 +1,7 @@
 import unittest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database import init_db, Product, Base
+from backend.database import init_db, Product, Base
 
 class TestDatabase(unittest.TestCase):
     def setUp(self):
