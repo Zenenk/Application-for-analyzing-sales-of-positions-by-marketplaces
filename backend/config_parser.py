@@ -27,14 +27,13 @@ def read_config(config_file):
       - settings: словарь, где ключи - названия секций, 
                   а значения - словари параметров из этой секции.
     """
-    config = configparser.ConfigParser()
+    config = configparser.ConfigParser(interpolation=None)
     config.read(config_file, encoding='utf-8')
     settings = {}
     for section in config.sections():
         settings[section] = dict(config.items(section))
     return settings
 
-# Пример использования
 if __name__ == "__main__":
     cfg = read_config("config/config.conf")
     print(cfg)

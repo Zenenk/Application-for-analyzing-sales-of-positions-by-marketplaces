@@ -20,6 +20,8 @@ services:
       - db
     networks:
       - app-network
+    volumes: 
+      - ./backend/config:/app/config
 
   # ------------ Frontend (React → Nginx) ------------
   frontend:
