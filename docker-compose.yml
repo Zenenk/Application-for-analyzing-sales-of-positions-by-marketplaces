@@ -1,0 +1,64 @@
+services:
+  # ------------ Backend (Flask) ------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      # Перенаправляем SSH-агент внутрь сборки
+      ssh: 
+        - default
+    container_name: marketplace-backend
+    restart: always
+    env_file:
+      - ./backend/.env
+    environment:
+      # Переменная для подключения SQLAlchemy
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/postgres
+    ports:
+      - "5000:5000"        # наружный порт 8000 → Flask 5000
+    depends_on:
+      - db
+    networks:
+      - app-network
+    volumes: 
+      - ./backend/config:/app/config
+
+  # ------------ Frontend (React → Nginx) ------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      
+      ssh:
+        - default
+    container_name: marketplace-frontend
+    restart: always
+    ports:
+      - "3000:80"         # наружный порт 3000 → nginx:80
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # ------------ База данных PostgreSQL ------------
+  db:
+    image: postgres:13-alpine
+    container_name: marketplace-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+# Общая docker-сеть для всех сервисов
+networks:
+  app-network:
+    driver: bridge
+
+# Volume для хранения данных PostgreSQL
+volumes:
+  postgres_data:
