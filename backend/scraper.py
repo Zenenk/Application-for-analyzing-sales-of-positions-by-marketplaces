@@ -24,27 +24,27 @@ USER_AGENT = (
 
 def init_driver() -> webdriver.Chrome:
     """
-    Инициализирует headless Chrome WebDriver с автоматическим управлением драйвером
-    через webdriver-manager и базовыми stealth-настройками.
+    Инициализирует headless Chrome WebDriver с автозагрузкой драйвера
+    через webdriver-manager и лёгкими stealth-опциями.
     """
     chrome_options = Options()
-    # Указываем бинарник, если установлен chromium
+    # Попытка найти системный Chrome/Chromium
     chrome_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
     if chrome_path:
         chrome_options.binary_location = chrome_path
 
-    chrome_options.add_argument("--headless=new")  # headless mode
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    # Stealth options
+    # Stealth
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
-    # Hide webdriver property
+    # Скрыть webdriver-флаг
     driver.execute_cdp_cmd(
         "Page.addScriptToEvaluateOnNewDocument", {
             "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
@@ -55,8 +55,7 @@ def init_driver() -> webdriver.Chrome:
 
 def fetch_wb_search(query: str, limit: int = 10) -> List[Dict]:
     """
-    Использует публичный JSON-API Wildberries для поиска товаров по тексту.
-    Возвращает первые `limit` товаров.
+    Публичный JSON-API Wildberries: поиск по тексту.
     """
     url = "https://search.wb.ru/exactmatch/ru/common/v4/search"
     params = {
@@ -78,8 +77,8 @@ def fetch_wb_search(query: str, limit: int = 10) -> List[Dict]:
     for item in data.get('products', [])[:limit]:
         products.append({
             'name': item.get('name'),
-            'article': item.get('id'),
-            'price': item.get('salePriceU') / 100 if item.get('salePriceU') else None,
+            'article': str(item.get('id', '')),
+            'price': (item.get('salePriceU') or 0) / 100,
             'quantity': item.get('stocks', {}).get('present'),
             'image_url': item.get('image'),
         })
@@ -88,11 +87,10 @@ def fetch_wb_search(query: str, limit: int = 10) -> List[Dict]:
 
 def fetch_ozon_search(text: str, limit: int = 10) -> List[Dict]:
     """
-    Публичный Search API Ozon (composer-api) для поиска по тексту.
-    Возвращает первые `limit` товаров.
+    Публичный Search API Ozon: поиск по тексту.
     """
     api_url = "https://www.ozon.ru/api/composer-api.bx/api/v2/search/searchByText"
-    payload = {
+    params = {
         'text': text,
         'page': 1,
         'page_size': limit,
@@ -102,47 +100,74 @@ def fetch_ozon_search(text: str, limit: int = 10) -> List[Dict]:
         'Content-Type': 'application/json',
         'Accept': 'application/json',
     }
-    resp = requests.post(api_url, json=payload, headers=headers)
-    resp.raise_for_status()
-    items = resp.json().get('result', {}).get('items', [])
+    try:
+        resp = requests.get(api_url, params=params, headers=headers, timeout=10)
+    except requests.RequestException as e:
+        logger.error(f"Ozon API request failed: {e}")
+        return []
+
+    if resp.status_code != 200:
+        logger.error(f"Ozon API returned HTTP {resp.status_code} for text '{text}'")
+        return []
+
+    try:
+        data = resp.json()
+    except ValueError as e:
+        logger.error(f"Failed to decode JSON from Ozon API: {e}")
+        return []
+
+    items = data.get('result', {}).get('items', [])
     products = []
     for it in items:
         products.append({
             'name': it.get('title'),
-            'article': it.get('id'),
+            'article': str(it.get('id', '')),
             'price': it.get('price', {}).get('value'),
             'quantity': it.get('stocks', {}).get('quantity'),
-            'image_url': it.get('images', [None])[0],
+            'image_url': (it.get('images') or [None])[0],
         })
     return products
 
 
 def fetch_ozon_product(url: str) -> Optional[Dict]:
     """
-    Получает данные конкретного товара Ozon через public JSON API.
-    URL должен содержать ID товара в конце.
+    Данные одного товара Ozon через JSON API.
+    URL должен заканчиваться на -<id>/
     """
     m = re.search(r"-(\d+)/?$", url)
     if not m:
         logger.error(f"Не удалось извлечь ID из URL: {url}")
         return None
     prod_id = m.group(1)
-    api_url = f"https://www.ozon.ru/api/composer-api.bx/api/v2/product/get"
+    api_url = "https://www.ozon.ru/api/composer-api.bx/api/v2/product/get"
     payload = {'product_id': int(prod_id)}
     headers = {
         'User-Agent': USER_AGENT,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
     }
-    resp = requests.post(api_url, json=payload, headers=headers)
-    resp.raise_for_status()
-    item = resp.json().get('result', {})
+    try:
+        resp = requests.post(api_url, json=payload, headers=headers, timeout=10)
+    except requests.RequestException as e:
+        logger.error(f"Ozon product API failed: {e}")
+        return None
+
+    if resp.status_code != 200:
+        logger.error(f"Ozon product API HTTP {resp.status_code} for ID {prod_id}")
+        return None
+
+    try:
+        item = resp.json().get('result', {})
+    except ValueError as e:
+        logger.error(f"Ozon product JSON decode error: {e}")
+        return None
+
     return {
         'name': item.get('title'),
-        'article': item.get('id'),
+        'article': str(item.get('id', '')),
         'price': item.get('price', {}).get('value'),
         'quantity': item.get('stocks', {}).get('quantity'),
-        'image_url': item.get('images', [None])[0],
+        'image_url': (item.get('images') or [None])[0],
     }
 
 
@@ -155,72 +180,86 @@ def scrape_marketplace(
     save_html: Optional[str] = None,
 ) -> List[Dict]:
     """
-    Универсальный метод для разбора OZON и Wildberries.
-    Для OZON: если URL содержит '/product/', вернет один товар через JSON API,
-    иначе выполнит поиск по тексту.
-    Для Wildberries: всегда выполнит JSON-поиск.
+    Универсальный парсер: OZON (search/product), Wildberries и fallback.
     """
+    # 1) OZON: конкретный товар
     if 'ozon.ru/product' in url:
         logger.info(f"🔎 Ozon product page: {url}")
         prod = fetch_ozon_product(url)
         return [prod] if prod else []
-    elif 'ozon.ru/search' in url:
-        # извлекаем текст запроса
+
+    # 2) OZON: поиск по тексту
+    if 'ozon.ru/search' in url:
         q = re.search(r'text=([^&]+)', url)
         query = requests.utils.unquote(q.group(1)) if q else ''
         logger.info(f"🔎 Ozon search by text: {query}")
         return fetch_ozon_search(query, limit)
-    elif 'wildberries.ru' in url:
-        # извлекаем текст запроса
+
+    # 3) Wildberries: JSON API
+    if 'wildberries.ru' in url:
         q = re.search(r'search=([^&]+)', url)
         query = requests.utils.unquote(q.group(1)) if q else ''
         logger.info(f"🔎 Wildberries search: {query}")
         return fetch_wb_search(query, limit)
-    else:
-        # fallback: Selenium dump + BeautifulSoup
-        driver = init_driver()
-        try:
-            logger.info(f"Loading page via Selenium: {url}")
-            driver.get(url)
-            time.sleep(wait)
-            html = driver.page_source
-            if save_html:
-                Path(save_html).write_text(html, encoding="utf-8")
-                logger.info(f"HTML saved to: {save_html}")
-            soup = BeautifulSoup(html, "html.parser")
-            cards = soup.find_all("div", class_="product-card")
-            products = []
-            for card in cards[:limit]:
-                name = card.find("h2").get_text(strip=True)
-                art = card.get("data-article", "")
-                price = card.find("span", class_="price").get_text(strip=True)
-                qty = card.find("span", class_="quantity").get_text(strip=True)
-                img = card.find("img")
-                img_url = img["src"] if img and img.has_attr("src") else ""
-                if category_filter and not any(cf.lower() in name.lower() for cf in category_filter):
-                    continue
-                if article_filter and not any(af.lower() in art.lower() for af in article_filter):
-                    continue
-                products.append({
-                    'name': name,
-                    'article': art,
-                    'price': price,
-                    'quantity': qty,
-                    'image_url': img_url,
-                })
-            return products
-        finally:
-            driver.quit()
+
+    # 4) Fallback: Selenium + BeautifulSoup
+    driver = init_driver()
+    products: List[Dict] = []
+    try:
+        logger.info(f"Loading page via Selenium: {url}")
+        driver.get(url)
+        time.sleep(wait)
+        html = driver.page_source
+        if save_html:
+            Path(save_html).write_text(html, encoding="utf-8")
+            logger.info(f"HTML saved to: {save_html}")
+
+        soup = BeautifulSoup(html, "html.parser")
+        cards = soup.find_all("div", class_="product-card")
+        for card in cards[:limit]:
+            name_tag = card.find("h2", class_="product-name")
+            name = name_tag.get_text(strip=True) if name_tag else "Нет названия"
+
+            article = card.get("data-article", "Нет артикула")
+
+            price_tag = card.find("span", class_="product-price")
+            price = price_tag.get_text(strip=True) if price_tag else "0"
+
+            qty_tag = card.find("span", class_="product-quantity")
+            quantity = qty_tag.get_text(strip=True) if qty_tag else "0"
+
+            img_tag = card.find("img", class_="product-image")
+            image_url = img_tag["src"] if img_tag and img_tag.has_attr("src") else ""
+
+            # фильтрация
+            if category_filter and not any(cf.lower() in name.lower() for cf in category_filter):
+                continue
+            if article_filter and not any(af.lower() in article.lower() for af in article_filter):
+                continue
+
+            products.append({
+                "name": name,
+                "article": article,
+                "price": price,
+                "quantity": quantity,
+                "image_url": image_url,
+            })
+    except Exception as e:
+        logger.error(f"Ошибка при fallback-парсинге: {e}")
+    finally:
+        driver.quit()
+
+    return products
 
 
 if __name__ == "__main__":
-    # Пример: конкретный товар на OZON
+    # Тестовые примеры
     print(scrape_marketplace(
         "https://www.ozon.ru/product/hlebtsy-grechnevye-bez-soli-i-glyutena-tm-prodpostavka-15-sht-po-60-g-postnye-1636757719/",
         category_filter=["хлебцы"]
     ))
-    # Пример: первые 10 товаров на Wildberries
     print(scrape_marketplace(
         "https://www.wildberries.ru/catalog/0/search.aspx?search=хлебцы",
         category_filter=["хлебцы"]
     ))
+
