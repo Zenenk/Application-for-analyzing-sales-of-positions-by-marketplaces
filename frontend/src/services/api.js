@@ -1,21 +1,34 @@
 import axios from 'axios';
 
-// Базовый URL API берётся из переменной окружения или используется "/api" по умолчанию
-const API_BASE = process.env.REACT_APP_API_BASE || '/api';
+// Базовый URL можно настроить через .env (REACT_APP_API_BASE), по умолчанию – текущий хост
+axios.defaults.baseURL = process.env.REACT_APP_API_BASE || '/';
 
-// Создаём экземпляр axios с базовым URL, чтобы не указывать его каждый раз
-const apiClient = axios.create({
-  baseURL: API_BASE
-});
-
-// Функция для запроса списка продуктов (GET /products)
-export const getProducts = () => {
-  return apiClient.get('/products');
+// Объект с методами API
+const API = {
+  startProcess(settings) {
+    return axios.post('/start', settings || {}).then(res => res.data);
+  },
+  getDashboardData() {
+    return axios.get('/dashboard').then(res => res.data);
+  },
+  getReportsData() {
+    return axios.get('/reports').then(res => res.data);
+  },
+  getProductList() {
+    return axios.get('/products').then(res => res.data);
+  },
+  downloadPdf() {
+    window.open('/download/pdf', '_blank');
+  },
+  downloadCsv() {
+    window.open('/download/csv', '_blank');
+  }
 };
 
-// Функция для запуска анализа (POST /start)
-export const startAnalysis = (config) => {
-  // Отправляем POST запрос с JSON-конфигурацией анализа
-  return apiClient.post('/start', config);
-};
+// Именованный экспорт для getProducts
+export function getProducts() {
+  return API.getProductList();
+}
 
+// По-старому экспортируем API как default
+export default API;

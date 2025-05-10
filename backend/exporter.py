@@ -13,11 +13,15 @@ def export_to_csv(products, filename):
       - filename: имя CSV-файла для сохранения.
     """
     with open(filename, mode="w", newline="", encoding="utf-8") as csv_file:
-        fieldnames = ["name", "article", "price", "quantity", "image_url"]
+        fieldnames = ["name", "article", "price", "quantity", "image_url", "parsed_at"]
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         for product in products:
-            writer.writerow(product)
+            # Парсим parsed_at в строку, если это datetime
+            row = product.copy()
+            if hasattr(row.get("parsed_at"), "isoformat"):
+                row["parsed_at"] = row["parsed_at"].isoformat()
+            writer.writerow(row)
 
 def export_to_pdf(products, filename):
     """
@@ -32,8 +36,13 @@ def export_to_pdf(products, filename):
     y = height - 50  # начальная высота для первого элемента
     c.setFont("Helvetica", 12)
     for product in products:
-        text = (f"Название: {product.get('name', '')}, Артикул: {product.get('article', '')}, "
-                f"Цена: {product.get('price', '')}, Остаток: {product.get('quantity', '')}")
+        parsed = product.get("parsed_at")
+        ts = parsed.isoformat() if hasattr(parsed, "isoformat") else str(parsed)
+        text = (
+            f"Название: {product.get('name','')}, Артикул: {product.get('article','')}, "
+            f"Цена: {product.get('price','')}, Остаток: {product.get('quantity','')}, "
+            f"Дата парсинга: {ts}"
+        )
         c.drawString(50, y, text)
         y -= 20
         # Если достигли нижней границы страницы, создаём новую страницу

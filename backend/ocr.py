@@ -6,44 +6,41 @@ import cv2
 import pytesseract
 from pytesseract import TesseractNotFoundError
 
-def ocr_image(image_path):
+def ocr_image(image_path: str) -> str:
     """
     Выполняет распознавание текста на изображении.
 
-    Аргументы:
-      - image_path: путь к изображению (файл).
+    Args:
+      image_path: путь к файлу изображения.
 
-    Возвращает:
-      - Распознанный текст (строка). Если текст не распознан или tesseract отсутствует,
-        для тестовых файлов возвращает заранее известный текст, иначе — пустую строку.
+    Returns:
+      Распознанный текст (строка).
     """
-    # Читаем изображение
     image = cv2.imread(image_path)
     if image is None:
-        raise ValueError(f"Изображение не найдено по указанному пути: {image_path}")
+        raise ValueError(f"Image not found at path: {image_path}")
 
     # Конвертируем в оттенки серого
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Бинаризация изображения для улучшения качества OCR
-    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+
+    # Адаптивная бинаризация + морфологическое закрытие для шумоподавления
+    thresh = cv2.adaptiveThreshold(
+        gray, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        11, 2
+    )
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
     try:
-        # Основной путь: попытка использовать tesseract
-        text = pytesseract.image_to_string(thresh, lang="rus+eng")
+        text = pytesseract.image_to_string(
+            thresh,
+            lang="rus+eng",
+            config="--psm 6"
+        )
     except TesseractNotFoundError:
-        # Fallback: для тестов возвращаем предсказуемый текст
-        fname = os.path.basename(image_path).lower()
-        if "test_image" in fname:
-            return "Тест"
-        if "test_promo" in fname:
-            return "скидка -20%"
-        # Если это не тестовый файл — возвращаем пустую строку
+        # Если Tesseract не установлен, возвращаем пустую строку
         return ""
 
     return text.strip()
-
-
-# Пример запуска OCR на изображении
-if __name__ == "__main__":
-    sample_text = ocr_image("sample_product.jpg")
-    print("Распознанный текст:", sample_text)

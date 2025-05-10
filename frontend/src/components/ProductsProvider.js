@@ -1,46 +1,39 @@
 import React, { createContext, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { getProducts } from '../services/api';
+import { getProducts } from '../services/api';  // теперь корректно импортируется
 
-// Создаём контекст для продуктов
 export const ProductsContext = createContext();
 
-// Провайдер продуктов, который хранит глобальный список товаров и состояние загрузки/ошибки
 function ProductsProvider({ children }) {
-  const [products, setProducts] = useState([]);       // Список товаров, полученных из API
-  const [loading, setLoading] = useState(false);      // Флаг загрузки данных
-  const [error, setError] = useState(null);           // Состояние ошибки при загрузке
-  const [lastRunTime, setLastRunTime] = useState(null); // Время последнего запуска анализа
+  const [products, setProducts]       = useState([]);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState(null);
+  const [lastRunTime, setLastRunTime] = useState(null);
 
-  // Функция для загрузки продуктов с сервера
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      // Выполняем GET запрос к /api/products
-      const response = await getProducts();
-      setProducts(response.data || []);  // Обновляем список продуктов
+      const data = await getProducts();   // возвращает уже res.data
+      setProducts(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {
-      // В случае ошибки сохраняем объект ошибки (для отображения сообщения)
       setError(err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Загружаем продукты один раз при монтировании провайдера
   useEffect(() => {
     fetchProducts();
   }, []);
 
-  // Контекстное значение, доступное в дочерних компонентах через useContext(ProductsContext)
   const contextValue = {
     products,
     loading,
     error,
     lastRunTime,
     setLastRunTime,
-    refresh: fetchProducts  // Метод для повторной загрузки данных
+    refresh: fetchProducts
   };
 
   return (
@@ -51,7 +44,6 @@ function ProductsProvider({ children }) {
 }
 
 ProductsProvider.propTypes = {
-  // Провайдер ожидает на вход дочерние элементы React
   children: PropTypes.node.isRequired
 };
 
