@@ -13,7 +13,11 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt playwright playwright-stealth
 RUN playwright install chromium
+RUN pip install --upgrade pip setuptools && \
+    pip install --no-cache-dir -r requirements.txt && \
+    playwright install --with-deps
 
+    
 COPY . /app/backend
 
 ENV PYTHONPATH=/app
