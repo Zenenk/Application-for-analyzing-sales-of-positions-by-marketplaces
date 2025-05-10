@@ -20,3 +20,4 @@ fpdf>=1.7.2
 playwright==1.37.0
 playwright-stealth>=0.2.0
 python-dotenv>=1.0.0
+cloudscraper>=1.2.68
