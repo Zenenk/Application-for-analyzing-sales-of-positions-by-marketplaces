@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// Базовый URL можно настроить через .env (REACT_APP_API_BASE), по умолчанию – текущий хост
-axios.defaults.baseURL = process.env.REACT_APP_API_BASE || '/';
+// Базовый URL можно настроить через .env (REACT_APP_API_BASE); по умолчанию – префикс /api на текущем хосте
+axios.defaults.baseURL = process.env.REACT_APP_API_BASE || '/api';
 
 // Объект с методами API
 const API = {

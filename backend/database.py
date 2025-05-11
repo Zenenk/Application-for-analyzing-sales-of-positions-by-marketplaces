@@ -11,7 +11,7 @@ import os
 import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from backend import models
+import models
 from loguru import logger
 
 # Выбираем URL БД: при тестах — память, иначе — из окружения

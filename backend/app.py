@@ -1,5 +1,3 @@
-# backend/app.py
-
 from flask import Flask, request, jsonify, send_file
 import os
 from loguru import logger
@@ -14,7 +12,9 @@ import backend.scraper as scraper  # теперь с Playwright
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-CORS(app, resources={r"/*": {"origins": os.getenv("ALLOWED_ORIGIN")}})
+# Разрешаем запросы от фронтенда (если ALLOWED_ORIGIN не задан, разрешаем для всех)
+origins = os.getenv('ALLOWED_ORIGIN', '*')
+CORS(app, resources={r"/*": {"origins": origins}})
 
 # init DB
 init_db()
@@ -54,10 +54,12 @@ def start_analysis():
     all_products = []
     for u in urls.split(','):
         u = u.strip()
+        if not u:
+            continue
         try:
             logger.info(f"🔍 Начинаем парсинг URL: {u} (dump: {save_html})")
             prods = scraper.scrape_marketplace(u, category_filter=cats, limit=10, save_html=save_html)
-            if settings.get('EXPORT',{}).get('save_to_db','false').lower() == 'true':
+            if settings.get('EXPORT', {}).get('save_to_db', 'false').lower() == 'true':
                 for p in prods:
                     add_product(p)
             all_products.extend(prods)
@@ -91,7 +93,7 @@ def start_analysis():
         analysis = compare_product_data(all_products[-2], all_products[-1])
 
     # экспорт
-    csvf, pdff = 'exported.csv','exported.pdf'
+    csvf, pdff = 'exported.csv', 'exported.pdf'
     try:
         export_to_csv(all_products, csvf)
         export_to_pdf(all_products, pdff)
@@ -112,10 +114,10 @@ def download(kind):
     elif kind == 'pdf':
         fn = 'exported.pdf'
     else:
-        return jsonify({"error":"bad type"}), 400
+        return jsonify({"error": "bad type"}), 400
     path = os.path.join(os.getcwd(), fn)
     if not os.path.exists(path):
-        return jsonify({"error":"not found"}), 404
+        return jsonify({"error": "not found"}), 404
     return send_file(path, as_attachment=True, download_name=fn)
 
 @app.route('/products', methods=['GET'])
@@ -132,6 +134,28 @@ def list_products():
             "timestamp": getattr(p, "timestamp", None)
         })
     return jsonify(out)
+
+@app.route('/dashboard', methods=['GET'])
+def dashboard_data():
+    # Сводные данные для дашборда: количество товаров и сравнение последних двух
+    products = list(get_products())
+    summary = {"products_count": len(products)}
+    if len(products) >= 2:
+        try:
+            summary["last_compare"] = compare_product_data(products[-2], products[-1])
+        except Exception as e:
+            summary["error"] = str(e)
+    return jsonify(summary)
+
+@app.route('/reports', methods=['GET'])
+def reports_data():
+    # Список отчётов (CSV, PDF), которые можно скачать
+    reports_list = []
+    if os.path.exists('exported.csv'):
+        reports_list.append({"id": "csv", "title": "Экспорт CSV"})
+    if os.path.exists('exported.pdf'):
+        reports_list.append({"id": "pdf", "title": "Отчёт PDF"})
+    return jsonify(reports_list)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
