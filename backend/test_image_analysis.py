@@ -1,25 +1,33 @@
 # test_image_analysis.py
 
 import os
+import time
 import tempfile
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Инициализация БД и ORM
 from database import init_db, add_product, get_products
 # Датчик промо-тегов
 from promo_detector import PromoDetector
-# Экспортер в PDF/CSV
-from exporter import export_to_pdf, export_to_csv
+# Экспортер отчётов (PDF + CSV)
+from exporter import export_to_csv, export_to_pdf
+
+def safe_remove(path: str, retries: int = 5, delay: float = 0.2):
+    for _ in range(retries):
+        try:
+            os.remove(path)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    print(f"⚠️ Не удалось удалить временный файл: {path}")
 
 def main():
-    # 1) Инициализируем БД (создаст таблицы при необходимости)
     init_db()
 
-    # 2) Добавляем тестовый товар
-    #    Здесь можно указать URL или локальный путь к изображению
+    # Добавляем тестовый товар
     image_url = (
-        "https://sdmntprnorthcentralus.oaiusercontent.com/files/00000000-f310-622f-9498-b55533dfb99f/raw?se=2025-05-11T19%3A27%3A20Z&sp=r&sv=2024-08-04&sr=b&scid=00000000-0000-0000-0000-000000000000&skoid=1e6af1bf-6b08-4a04-8919-15773e7e7024&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2025-05-11T18%3A22%3A02Z&ske=2025-05-12T18%3A22%3A02Z&sks=b&skv=2024-08-04&sig=vTOOD6ZsQTVo%2BBfA4A/1uGG2VSHGZQ4kkhVq2Ow1llI%3D"
+        "https://chatgpt.com/s/m_6821231309688191ac8009fdf9542bb9"
     )
     product = {
         "name":      "Хлебцы гречневые HealthWealth",
@@ -31,50 +39,42 @@ def main():
     add_product(product)
     print("✅ Товар добавлен в БД:", product)
 
-    # 3) Считываем все товары из БД
     prods = get_products()
     print(f"📦 Всего в БД товаров: {len(prods)}")
 
-    # 4) Прогоняем промо-детектор по каждому товару
     detector = PromoDetector()
     results = []
+
     for p in prods:
         print(f"\n--- Анализ изображения для товара {p.article} ---")
-        # Скачиваем картинку во временный файл
         resp = requests.get(p.image_url, timeout=10)
-        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        tmp.write(resp.content)
-        tmp.flush()
-        tmp.close()
 
-        # Запускаем детектор промо
-        out = detector.predict_promotion(tmp.name)
+        # mkstemp + close to avoid Windows lock
+        fd, tmp_path = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
+        with open(tmp_path, "wb") as f:
+            f.write(resp.content)
+
+        out = detector.predict_promotion(tmp_path)
         print("Результат promo-детектора:", out)
 
-        # Собираем результаты, добавляем время парсинга
         results.append({
-            "name":         p.name,
-            "article":      p.article,
-            "price":        p.price,
-            "quantity":     p.quantity,
-            "image_url":    p.image_url,
-            "promotion":    out,
-            "parsed_at":    datetime.utcnow()
+            "name":       p.name,
+            "article":    p.article,
+            "price":      p.price,
+            "quantity":   p.quantity,
+            "image_url":  p.image_url,
+            "promotion":  out,
+            "parsed_at":  datetime.now(timezone.utc)
         })
 
-        # Удаляем временный файл
-        os.remove(tmp.name)
+        safe_remove(tmp_path)
 
-        # 5) Экспортируем в PDF
-    pdf_path = "test_report.pdf"
-    export_to_pdf(results, pdf_path)
-    print(f"📄 PDF-отчёт сохранён в {pdf_path}")
-
-    # 6) Экспортируем в CSV
-    csv_path = "test_report.csv"
-    export_to_csv(results, csv_path)
-    print(f"📑 CSV-отчёт сохранён в {csv_path}")
-
+    # **Вот это** вместо отдельных вызовов export_to_pdf/CSV
+    pdf_path = export_to_pdf(results)
+    csv_path = export_to_csv(results)
+    print(f"\n📄 PDF-отчёт сохранён: {pdf_path}")
+    print(f"📑 CSV-отчёт сохранён: {csv_path}")
 
 if __name__ == "__main__":
     main()
