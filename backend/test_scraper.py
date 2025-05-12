@@ -1,26 +1,41 @@
 # backend/test_scraper.py
+
 from scraper import MarketplaceScraper
 
 def main():
-    s = MarketplaceScraper()
+    markets = ["Ozon", "Wildberries"]
+    query = "хлебцы"
 
-    for market in ("Ozon", "Wildberries"):
-        items = s.scrape_category(market, "хлебцы")
-        print(f"\n=== {market} | хлебцы ===")
-        print(f"Found {len(items)} items:")
-        for i, p in enumerate(items, 1):
-            print(f" {i}. {p['name']} — SKU {p['sku']} — {p['price']} ₽ — image={p['image']}")
+    scraper = MarketplaceScraper()
+    try:
+        # ——— Тестируем категории ———
+        for m in markets:
+            print(f"\n=== {m} | {query} ===")
+            items = scraper.scrape_category(m, query)
+            print(f"Found {len(items)} items")
+            for idx, p in enumerate(items, start=1):
+                print(f" {idx}. {p['name']} — SKU {p['sku']} — {p['price']} ₽ — image={p['image']}")
+        
+        # ——— Тестируем одиночный товар Ozon ———
+        print("\n=== Ozon single product ===")
+        oz_prod = scraper.scrape_product(
+            "Ozon",
+            "https://www.ozon.ru/product/hlebtsy-3-zlaka-solenye-1000-g-1605229466/"
+        )
+        print(oz_prod)
 
-    # И пример одного товара:
-    print("\n=== Ozon single product ===")
-    p = s.scrape_product("Ozon", "https://www.ozon.ru/product/hlebtsy-3-zlaka-solenye-1000-g-1605229466/")
-    print(p)
+        # ——— Тестируем одиночный товар Wildberries ———
+        print("\n=== Wildberries single product ===")
+        wb_prod = scraper.scrape_product(
+            "Wildberries",
+            "https://www.wildberries.ru/catalog/228598643/detail.aspx"
+        )
+        print(wb_prod)
 
-    print("\n=== WB single product ===")
-    p = s.scrape_product("Wildberries", "https://www.wildberries.ru/catalog/228598643/detail.aspx")
-    print(p)
+    finally:
+        # Закрываем браузер
+        scraper.close()
 
-    s.session.close()
 
 if __name__ == "__main__":
     main()

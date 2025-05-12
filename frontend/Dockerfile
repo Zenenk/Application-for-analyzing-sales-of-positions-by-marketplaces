@@ -3,6 +3,7 @@ FROM node:18-alpine AS build
 
 # Рабочая директория
 WORKDIR /app
+RUN mkdir -p /app/pdf_results /app/csv_results
 
 # Копируем только манифесты и настройки npm
 COPY package.json package-lock.json ./
