@@ -38,4 +38,29 @@ API.importCsv = function(file) {
     .then(res => res.data);
 };
 
+/**
+ * Импорт данных из скриншота категории или товара.
+ * @param {File} imageFile — PNG/JPG файла скриншота.
+ * @param {string} marketplace — 'Ozon' или 'Wildberries'.
+ */
+export const importScreenshot = async (imageFile, marketplace) => {
+    const fd = new FormData();
+    fd.append("image", imageFile);
+    fd.append("marketplace", marketplace);
+    const res = await axios.post("/api/import/screenshot", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+};
+
+/**
+ * Получить историю изменений по артикулу.
+ * @param {string} article
+ * @returns {Promise<Array<{parsed_at:string, price:string, price_old:string, price_new:string, discount:string, quantity:string}>>}
+ */
+export const getProductHistory = async (article) => {
+  const res = await axios.get(`/api/products/history/${encodeURIComponent(article)}`);
+  return res.data;
+};
+
 export default API;

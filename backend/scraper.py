@@ -1,181 +1,262 @@
 # backend/scraper.py
-
+import logging
+import re
 import time
 import random
-import re
-from urllib.parse import quote
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from playwright.sync_api import sync_playwright, TimeoutError as PLTimeout
+logger = logging.getLogger(__name__)
 
 class MarketplaceScraper:
     def __init__(self):
-        # Список реальных UA для ротации
-        self._UAS = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
-            " Chrome/114.0.5735.199 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko)"
-            " Version/16.4 Safari/605.1.15",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)"
-            " Chrome/114.0.5735.199 Safari/537.36",
-        ]
-
         self._pw = sync_playwright().start()
-
-        ua = random.choice(self._UAS)
-        width  = random.randint(1000, 1400)
-        height = random.randint(700,  900)
-
-        self._browser = self._pw.chromium.launch(
-            headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ]
+        # Запускаем браузер в headless режиме
+        self._browser = self._pw.chromium.launch(headless=True)
+        self._context = self._browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)...",
         )
-        self._ctx = self._browser.new_context(
-            user_agent=ua,
-            viewport={"width": width, "height": height},
-            locale="ru-RU",
-            java_script_enabled=True,
-        )
-        # базовая “stealth”
-        self._ctx.add_init_script(
-            """() => {
-                Object.defineProperty(navigator, 'webdriver', {get: () => false});
-                Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU','ru']});
-                Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
-                window.chrome = {runtime: {}};
-            }"""
-        )
-        self._log(f"Launched browser, UA={ua}, viewport={width}×{height}")
 
     def close(self):
-        self._ctx.close()
-        self._browser.close()
-        self._pw.stop()
-
-    def _log(self, msg: str):
-        print(f"[Scraper] {msg}")
-
-    def scrape_category(self, marketplace: str, query: str):
-        m = marketplace.lower()
-        if m == "ozon":
-            return self._scrape_ozon_category(query)
-        if m == "wildberries":
-            return self._scrape_wb_category(query)
-        raise ValueError(f"Unknown marketplace: {marketplace!r}")
-
-    def scrape_product(self, marketplace: str, url: str):
-        """Визитка товара: открываем страницу и вытаскиваем по селекторам."""
-        self._log(f"scrape_product → {marketplace} @ {url}")
-        page = self._ctx.new_page()
-        result = {"name": None, "sku": None, "price": 0.0, "stock": None, "image": None}
+        """Закрывает браузерный контекст и Playwright"""
         try:
-            page.goto(url, timeout=60000)
-            time.sleep(random.uniform(1.0, 2.5))
+            self._browser.close()
+            self._pw.stop()
+        except Exception as e:
+            logger.error(f"Ошибка при закрытии браузера: {e}")
 
-            if marketplace.lower()=="ozon":
-                # селекторы по инспекции DevTools
-                TITLE = "#layoutPage h1"
-                PRICE = ("#layoutPage div.mo9_28.a2100-a.a2100-a3 "
-                         "> button span div div.n1k_28.k2n_28 div div span")
-                STOCK = ("#layoutPage div.b5g_3.gb5_3 "
-                         "> a.q4b012-a div.b6g_3 div.gb4_3 div.bq022-a span")
-                IMG   = ("#layoutPage div.lq2_28 ok1_28.ql6_28 div img")
+    def _human_scroll(self, page):
+        """
+        Имитация человеческого скролла: плавное прокручивание страницы с рандомными паузами.
+        """
+        try:
+            height = page.evaluate("() => document.body.scrollHeight") or 0
+            viewport = page.evaluate("() => window.innerHeight") or 0
+            # Разбиваем на 5 сегментов
+            segments = [i/4 for i in range(5)]
+            for frac in segments:
+                y = int(frac * (height - viewport))
+                page.evaluate(f"() => window.scrollTo(0, {y})")
+                pause = random.uniform(5, 15)
+                time.sleep(pause)
+        except Exception as e:
+            logger.warning(f"Human scroll warning: {e}")
+
+    def _human_delay(self, min_sec=2, max_sec=5):
+        """
+        Рандомная пауза между действиями: от min_sec до max_sec секунд.
+        """
+        time.sleep(random.uniform(min_sec, max_sec))
+
+    def scrape_product(self, marketplace: str, url: str) -> dict:
+        """
+        Скрапинг одной страницы товара с имитацией человека.
+        Возвращает словарь данных.
+        """
+        page = self._context.new_page()
+        result = {
+            "url": url,
+            "name": None,
+            "article": None,
+            "price": None,
+            "quantity": None,
+            "image_url": None,
+            # Новые поля скидок и промо
+            "price_old": None,
+            "price_new": None,
+            "discount": None,
+            "promo_labels": []
+        }
+        try:
+            page.goto(url, timeout=120000)
+            # Ждём полной загрузки фронтенда
+            page.wait_for_load_state("networkidle", timeout=60000)
+            # Имитация чтения страницы пользователем
+            human_read = random.uniform(60, 180)
+            logger.info(f"Human-like reading time: {human_read:.1f}s for {url}")
+            self._human_scroll(page)
+            time.sleep(human_read)
+
+            # Извлечение данных с рандомными паузами
+            # Название
+            try:
+                result["name"] = page.locator("#layoutPage h1").text_content().strip()
+            except PlaywrightTimeoutError:
+                result["name"] = None
+            self._human_delay()
+
+            # Основная цена
+            try:
+                price_text = page.locator("button[data-testid='price-button'] span").text_content()
+                result["price"] = float(re.sub(r"[^0-9,.]", "", price_text).replace(",", "."))
+            except Exception:
+                result["price"] = None
+            self._human_delay()
+
+            # Изображение
+            try:
+                result["image_url"] = page.locator("img[data-testid='picture-element-img']").get_attribute("src")
+            except Exception:
+                result["image_url"] = None
+            self._human_delay()
+
+            # Старая и новая цены, скидка, промо-лейблы
+            if marketplace.lower() == "ozon":
+                # Новая цена
+                try:
+                    result["price_new"] = page.locator(".m4p_28.p6m_28").text_content().strip()
+                except Exception:
+                    result["price_new"] = None
+                self._human_delay()
+                # Старая цена
+                try:
+                    result["price_old"] = page.locator("span.qm0_28:nth-child(2)").text_content().strip()
+                except Exception:
+                    result["price_old"] = None
+                self._human_delay()
+                # Скидка
+                try:
+                    result["discount"] = page.locator(
+                        ".lt1_28 > div:nth-child(1) > div:nth-child(1)"
+                    ).text_content().strip()
+                except Exception:
+                    result["discount"] = None
+                self._human_delay()
+                # Промо-лейблы
+                try:
+                    labels = page.locator(".bg8_3 > span:nth-child(1)").all_text_contents()
+                    result["promo_labels"] = [t.strip() for t in labels if t.strip()]
+                except Exception:
+                    result["promo_labels"] = []
             else:
                 # Wildberries
-                TITLE = "div.product-page__header h1"
-                PRICE = ("div.product-page__price-block-wrap span > span")
-                STOCK = None
-                IMG   = "#imageContainer img"
-
-            # ждём заголовок
-            page.wait_for_selector(TITLE, timeout=30000)
-            result["name"] = page.query_selector(TITLE).inner_text().strip()
-
-            if STOCK:
+                # Новая цена
                 try:
-                    result["stock"] = page.query_selector(STOCK).inner_text().strip()
-                except:
-                    result["stock"] = None
+                    result["price_new"] = page.locator(
+                        "div.product-page__price-block:nth-child(3) > div:nth-child(6) "
+                        "> div:nth-child(3) > div:nth-child(1) > p:nth-child(2) "
+                        "> span:nth-child(1) > span:nth-child(3)"
+                    ).text_content().strip()
+                except Exception:
+                    result["price_new"] = None
+                self._human_delay()
+                # Старая цена
+                try:
+                    result["price_old"] = page.locator(
+                        "div.product-page__price-block:nth-child(3) > div:nth-child(6) "
+                        "> div:nth-child(3) > div:nth-child(1) > p:nth-child(2) "
+                        "> del:nth-child(3) > span:nth-child(1)"
+                    ).text_content().strip()
+                except Exception:
+                    result["price_old"] = None
+                self._human_delay()
+                # Вычисление скидки
+                if result.get("price_old") and result.get("price_new"):
+                    try:
+                        old = float(re.sub(r"[^0-9,.]", "", result["price_old"]).replace(",", "."))
+                        new = float(re.sub(r"[^0-9,.]", "", result["price_new"]).replace(",", "."))
+                        pct = (old - new) / old * 100
+                        result["discount"] = f"{pct:.0f}%"
+                    except Exception:
+                        result["discount"] = None
+                else:
+                    try:
+                        result["discount"] = page.locator(
+                            "div.product-page__badges:nth-child(4) > div:nth-child(7) > span:nth-child(1)"
+                        ).text_content().strip()
+                    except Exception:
+                        result["discount"] = None
+                self._human_delay()
+                # Промо-лейблы
+                labels = []
+                for sel in [
+                    "div.spec-action:nth-child(1) > a:nth-child(4)",
+                    "div.product-page__badges:nth-child(4) > div:nth-child(7) > span:nth-child(1)"
+                ]:
+                    try:
+                        texts = page.locator(sel).all_text_contents()
+                        labels.extend([t.strip() for t in texts if t.strip()])
+                    except Exception:
+                        pass
+                    self._human_delay(1, 3)
+                result["promo_labels"] = labels
 
-            # цена
-            raw = page.query_selector(PRICE).inner_text()
-            result["price"] = float(re.sub(r"[^\d,]", "", raw).replace(",", "."))
-
-            # артикул
-            m = re.search(r"(\d{5,})", url)
-            result["sku"] = m.group(1) if m else None
-
-            # картинка
-            el = page.query_selector(IMG)
-            result["image"] = el.get_attribute("src") if el else None
-
-        except PLTimeout as e:
-            self._log(f"Product timeout ({marketplace}): {e}")
+        except Exception as e:
+            logger.error(f"Error scraping product {url}: {e}")
         finally:
             page.close()
-
-        self._log(f"Product → {result!r}")
         return result
 
     def _scrape_ozon_category(self, query: str):
-        """Категория Ozon: рендерим страницу в браузере и парсим первые 10 карточек."""
-        SEARCH = f"https://www.ozon.ru/search/?text={quote(query)}"
-        SEL_CARD = "#contentScrollPaginator div[data-index]"
-        self._log(f"OZON_CATEGORY: navigating to {SEARCH}")
-        page = self._ctx.new_page()
-        cards = []
+        """Скрапинг категории Ozon с имитацией"""
+        page = self._context.new_page()
+        products = []
         try:
-            page.goto(SEARCH, timeout=60000)
-            # плавная прокрутка вниз
-            for i in range(3):
-                time.sleep(random.uniform(0.5,1.0))
-                page.mouse.wheel(0, random.randint(400,800))
-            page.wait_for_selector(SEL_CARD, timeout=30000)
-
-            els = page.query_selector_all(SEL_CARD)[:10]
-            for c in els:
-                href = c.query_selector("a").get_attribute("href")
-                url = href if href.startswith("http") else "https://www.ozon.ru"+href
-                cards.append(self.scrape_product("Ozon", url))
-        except PLTimeout as e:
-            self._log(f"OZON_CATEGORY TIMEOUT: {e}")
-            snippet = page.content()[:200]
-            self._log(f"OZON_CATEGORY HTML snippet: {snippet!r}")
+            search_url = f"https://www.ozon.ru/search/?text={query}"
+            page.goto(search_url, timeout=120000)
+            page.wait_for_load_state("networkidle", timeout=60000)
+            self._human_scroll(page)
+            count = min(page.locator("div[data-index]").count(), 50)
+            for i in range(count):
+                card = page.locator("div[data-index]").nth(i)
+                href = card.locator("a").get_attribute("href")
+                prod = self.scrape_product("ozon", href)
+                products.append(prod)
+                # Пауза между товарами
+                time.sleep(random.uniform(30, 90))
+        except Exception as e:
+            logger.error(f"Error scraping OZON category {query}: {e}")
         finally:
             page.close()
-
-        self._log(f"OZON_CATEGORY → {len(cards)} items")
-        return cards
+        return products
 
     def _scrape_wb_category(self, query: str):
-        """Категория Wildberries: рендерим страницу и парсим первые 10 карточек."""
-        SEARCH = f"https://www.wildberries.ru/catalog/0/search.aspx?search={quote(query)}"
-        SEL_CARD = "article.product-card.j-card-item"
-        self._log(f"WB_CATEGORY: navigating to {SEARCH}")
-        page = self._ctx.new_page()
-        cards = []
+        """Скрапинг категории Wildberries с имитацией"""
+        page = self._context.new_page()
+        products = []
         try:
-            page.goto(SEARCH, timeout=60000)
-            # плавная прокрутка
-            for i in range(2):
-                time.sleep(random.uniform(0.5,1.0))
-                page.mouse.wheel(0, random.randint(500,900))
-            page.wait_for_selector(SEL_CARD, timeout=30000)
-
-            els = page.query_selector_all(SEL_CARD)[:10]
-            for c in els:
-                href = c.query_selector("a.product-card__link").get_attribute("href")
-                url = href if href.startswith("http") else "https://www.wildberries.ru"+href
-                cards.append(self.scrape_product("Wildberries", url))
-        except PLTimeout as e:
-            self._log(f"WB_CATEGORY TIMEOUT: {e}")
-            snippet = page.content()[:200]
-            self._log(f"WB_CATEGORY HTML snippet: {snippet!r}")
+            search_url = f"https://www.wildberries.ru/catalog/0/search.aspx?search={query}"
+            page.goto(search_url, timeout=120000)
+            page.wait_for_load_state("networkidle", timeout=60000)
+            self._human_scroll(page)
+            count = min(page.locator("article.product-card").count(), 50)
+            for i in range(count):
+                card = page.locator("article.product-card").nth(i)
+                href = card.locator("a").get_attribute("href")
+                prod = self.scrape_product("wildberries", href)
+                products.append(prod)
+                time.sleep(random.uniform(30, 90))
+        except Exception as e:
+            logger.error(f"Error scraping WB category {query}: {e}")
         finally:
             page.close()
+        return products
 
-        self._log(f"WB_CATEGORY → {len(cards)} items")
-        return cards
+
+def scrape_marketplace(url, category_filter=None, article_filter=None, limit=10):
+    """
+    Универсальная функция: выбирает категорию или товар и возвращает список.
+    """
+    mp = MarketplaceScraper()
+    products = []
+    try:
+        if "/search" in url:
+            if "ozon.ru" in url:
+                query = url.split("?")[1].split("=")[1]
+                products = mp._scrape_ozon_category(query)
+            else:
+                query = url.split("=")[1]
+                products = mp._scrape_wb_category(query)
+        else:
+            marketplace = "ozon" if "ozon.ru" in url else "wildberries"
+            products = [mp.scrape_product(marketplace, url)]
+        # Применяем фильтры
+        if category_filter:
+            products = [p for p in products if any(
+                cat.lower() in (p.get("name") or "").lower()
+                for cat in category_filter
+            )]
+        if article_filter:
+            products = [p for p in products if p.get("article") in article_filter]
+        return products[:limit]
+    finally:
+        mp.close()

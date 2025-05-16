@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+// frontend/src/pages/ProductList.jsx
+
+import React, { useEffect, useState, useMemo } from 'react';
 import API from '../services/api';
 import ProductCard from '../components/ProductCard';
+import { sortByHierarchy } from '../utils/sortProducts';
 
 function ProductList() {
   const [products, setProducts] = useState(null);
@@ -15,12 +18,19 @@ function ProductList() {
       });
   }, []);
 
-  if (error)   return <div className="text-red-600">{error}</div>;
+  // Сортируем продукты по иерархии после загрузки
+  const sortedProducts = useMemo(() => {
+    if (!products) return [];
+    // Копируем массив, чтобы не мутировать оригинал
+    return [...products].sort(sortByHierarchy);
+  }, [products]);
+
+  if (error) return <div className="text-red-600">{error}</div>;
   if (!products) return <div>Загрузка товаров...</div>;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {products.map(product => (
+      {sortedProducts.map(product => (
         <ProductCard key={product.id} product={product} />
       ))}
     </div>

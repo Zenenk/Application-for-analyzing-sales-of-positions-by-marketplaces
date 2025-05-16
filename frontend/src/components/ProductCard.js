@@ -1,74 +1,97 @@
+// frontend/src/components/ProductCard.jsx
 import React from 'react';
 import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 
-// Компонент карточки товара для отображения в списках (Dashboard, ProductList)
-function ProductCard({ product }) {
-  // Вычисляем процент изменения продаж (динамика) между текущим и предыдущим периодом
-  const { id, name, category, marketplace, article, currentSales, previousSales, image } = product;
+const ProductCard = ({ product }) => {
+  const {
+    id,
+    name,
+    article,
+    image_url,
+    currentSales,
+    previousSales,
+    category,
+    marketplace,
+    price_old,
+    price_new,
+    discount,
+    promo_labels,
+  } = product;
+
   let changePercent = null;
   if (currentSales != null && previousSales != null) {
-    if (previousSales === 0) {
-      // Если ранее продаж не было (0), то изменение на 100% (или бесконечный рост)
-      changePercent = previousSales === 0 ? '∞%' : '0%';
-    } else {
-      const diff = currentSales - previousSales;
-      changePercent = ((diff / previousSales) * 100).toFixed(1) + '%';
+    if (previousSales === 0 && currentSales > 0) {
+      changePercent = '∞%';
+    } else if (previousSales !== 0) {
+      const diff = ((currentSales - previousSales) / previousSales) * 100;
+      changePercent = `${diff.toFixed(0)}%`;
     }
   }
 
   return (
-    <div className="bg-white shadow rounded p-4 flex flex-col">
-      {/* Изображение товара (если есть). Ограничиваем высоту, чтобы карточки были компактными */}
-      {image ? (
-        <img src={image} alt={name} className="h-32 object-contain mb-2 self-center" />
+    <div className="border rounded p-4 hover:shadow-lg">
+      {image_url ? (
+        <img src={image_url} alt={name} className="w-full h-48 object-cover" />
       ) : (
-        <div className="h-32 flex items-center justify-center bg-gray-100 text-gray-500 mb-2">
+        <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
           Нет изображения
         </div>
       )}
-      {/* Название товара как ссылка на страницу деталей */}
-      <h3 className="font-bold text-lg mb-1">
-        <Link to={`/product/${id}`} className="text-blue-600 hover:underline">
-          {name}
-        </Link>
+      <h3 className="mt-2 text-lg font-semibold">
+        <Link to={`/product/${id}`}>{name}</Link>
       </h3>
-      {/* Категория и маркетплейс */}
-      <p className="text-sm text-gray-700 mb-1">Категория: <strong>{category}</strong></p>
-      <p className="text-sm text-gray-700 mb-2">Маркетплейс: <strong>{marketplace}</strong></p>
-      {/* Артикул товара */}
-      <p className="text-sm text-gray-500 mb-2">Артикул: {article}</p>
-      {/* Текущие продажи и изменение (если доступно) */}
-      {currentSales != null && (
-        <p className="text-sm">
-          Продажи: <strong>{currentSales}</strong>
-          {changePercent !== null && (
-            <span className={`ml-2 ${currentSales >= previousSales ? 'text-green-600' : 'text-red-600'}`}>
-              ({currentSales >= previousSales ? '▲' : '▼'} {changePercent})
-            </span>
-          )}
+      <p>Артикул: {article}</p>
+      {category && <p>Категория: {category}</p>}
+      {marketplace && <p>Маркетплейс: {marketplace}</p>}
+
+      {/* Новые поля скидок */}
+      {price_old && (
+        <p className="line-through text-gray-400">
+          Старая цена: {price_old}
         </p>
+      )}
+      {price_new && (
+        <p className="text-red-600 font-bold">
+          Новая цена: {price_new}
+        </p>
+      )}
+      {discount && (
+        <p className="text-green-600">Скидка: {discount}</p>
+      )}
+      {promo_labels && promo_labels.length > 0 && (
+        <p>Промо: {promo_labels.join(', ')}</p>
+      )}
+
+      {/* Блок продаж */}
+      {changePercent != null && (
+        <div className="mt-2">
+          <p>Продажи: {currentSales}</p>
+          <p className={currentSales >= previousSales ? 'text-green-600' : 'text-red-600'}>
+            {changePercent}
+          </p>
+        </div>
       )}
     </div>
   );
-}
+};
 
 ProductCard.propTypes = {
-  // Ожидаем объект товара с указанными полями
   product: PropTypes.shape({
-    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    id: PropTypes.number.isRequired,
     name: PropTypes.string.isRequired,
-    category: PropTypes.string.isRequired,
-    marketplace: PropTypes.string.isRequired,
     article: PropTypes.string.isRequired,
-    currentSales: PropTypes.number,    // может быть null, если данных нет
-    previousSales: PropTypes.number,   // может быть null
-    image: PropTypes.string,           // URL изображения товара
-    history: PropTypes.arrayOf(PropTypes.shape({
-      date: PropTypes.string.isRequired,
-      sales: PropTypes.number.isRequired
-    }))
-  }).isRequired
+    image_url: PropTypes.string,
+    currentSales: PropTypes.number,
+    previousSales: PropTypes.number,
+    category: PropTypes.string,
+    marketplace: PropTypes.string,
+    price_old: PropTypes.string,
+    price_new: PropTypes.string,
+    discount: PropTypes.string,
+    promo_labels: PropTypes.arrayOf(PropTypes.string),
+  }).isRequired,
 };
 
 export default ProductCard;
+

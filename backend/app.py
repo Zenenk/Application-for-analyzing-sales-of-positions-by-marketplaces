@@ -1,253 +1,239 @@
 # backend/app.py
-
-from flask import Flask, request, jsonify, send_file
 import os
-from loguru import logger
-import csv
+import tempfile
+import logging
+import configparser
+from flask import Flask, request, jsonify, send_file, send_file, abort
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from datetime import datetime
-
-import backend.config_parser as config_parser
+from backend.config_parser import read_config
 from backend.database import init_db, add_product, get_products
-from backend.exporter import export_to_csv, export_to_pdf
-from backend.analysis import compare_product_data
+from backend.scraper import scrape_marketplace
 from backend.promo_detector import PromoDetector
-import backend.scraper as scraper  # теперь с Playwright
+from backend.exporter import export_to_csv, export_to_pdf, export_product_pdf
+from backend.database import get_product_history
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-# Разрешаем CORS
-origins = os.getenv('ALLOWED_ORIGIN', '*')
-CORS(app, resources={r"/*": {"origins": origins}})
-
-# Инициализация БД
+CORS(app)
 init_db()
 
-@app.route('/health', methods=['GET'])
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"}), 200
+    return jsonify({"status": "ok"})
 
-@app.route('/', methods=['GET'])
+@app.route("/", methods=["GET"])
 def index():
-    return """
-    <h1>Приложение для анализа маркетплейсов</h1>
-    <form action="/start" method="post" enctype="multipart/form-data">
-      <input type="file" name="config_file" />
-      <input type="text"  name="save_html"  placeholder="dump.html (optional)" />
-      <button type="submit">Начать анализ</button>
-    </form>
-    """
+    return '''
+    <html>
+      <body>
+        <form action="/start" method="post" enctype="multipart/form-data">
+          <input type="file" name="config_file"/>
+          <button type="submit">Run</button>
+        </form>
+      </body>
+    </html>
+    '''
 
-# Папка для импорта CSV
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-CSV_UPLOADS  = os.path.join(PROJECT_ROOT, "csv_results")
-os.makedirs(CSV_UPLOADS, exist_ok=True)
+@app.route("/start", methods=["POST"])
+def start():
+    config_path = None
 
-ALLOWED_EXTENSIONS = {"csv"}
-def allowed_file(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+    # Поддержка JSON-запроса из frontend
+    if request.content_type.startswith("application/json"):
+        data = request.get_json()
+        marketplace = data.get("marketplace")
+        query_type = data.get("type")
+        query_value = data.get("query")
+        limit = int(data.get("limit", 10))
+
+        if not all([marketplace, query_type, query_value]):
+            return jsonify({"error": "Некорректные параметры"}), 400
+
+        # Генерация временного INI-конфига
+        config = configparser.ConfigParser()
+        config["MARKETPLACES"] = {"marketplaces": marketplace}
+        config["SEARCH"] = {
+            "urls": "",
+            "categories": query_value if query_type == "category" else "",
+            "articles": query_value if query_type == "product" else "",
+        }
+        config["EXPORT"] = {"save_to_db": "True"}
+
+        tmpfile = tempfile.NamedTemporaryFile(delete=False, suffix=".conf")
+        config.write(tmpfile)
+        tmpfile.close()
+        config_path = tmpfile.name
+
+    else:
+        # Загрузка конфигурации из файла
+        config_file = request.files.get("config_file")
+        if not config_file:
+            return jsonify({"error": "Нет файла конфигурации"}), 400
+
+        filename = secure_filename(config_file.filename)
+        config_path = os.path.join("backend", "config", filename)
+        config_file.save(config_path)
+
+    # Чтение и парсинг конфига
+    try:
+        config = read_config(config_path)
+    except Exception as e:
+        return jsonify({"error": f"Ошибка чтения конфигурации: {e}"}), 400
+
+    urls = config.get("SEARCH", {}).get("urls", "").split(",")
+    categories = config.get("SEARCH", {}).get("categories", "").split(",")
+    articles = config.get("SEARCH", {}).get("articles", "").split(",")
+    save_to_db = config.get("EXPORT", {}).get("save_to_db", "False") == "True"
+
+    all_products = []
+    # Скрапинг по каждому URL
+    for url in urls:
+        if not url.strip():
+            continue
+        try:
+            prods = scrape_marketplace(
+                url.strip(),
+                category_filter=categories,
+                article_filter=articles,
+                limit=limit
+            )
+            all_products.extend(prods)
+        except Exception as e:
+            logger.error(f"Ошибка при скрапинге {url}: {e}")
+
+    # Анализ промо-картинок
+    promo = PromoDetector()
+    for p in all_products:
+        img = p.get("image_url")
+        if not img:
+            p["promotion_analysis"] = {
+                "promotion_detected": False,
+                "detected_keywords": [],
+                "ocr_text": "",
+                "promotion_probability": 0.0
+            }
+            continue
+        try:
+            res = promo.predict_promotion(img)
+            p["promotion_analysis"] = res
+        except Exception as e:
+            p["promotion_analysis"] = {
+                "promotion_detected": False,
+                "detected_keywords": [],
+                "ocr_text": str(e),
+                "promotion_probability": 0.0
+            }
+
+    # Сохранение в БД
+    for p in all_products:
+        if save_to_db:
+            product_data = {
+                "name": p.get("name", ""),
+                "article": p.get("article", ""),
+                "price": str(p.get("price", "")),
+                "quantity": str(p.get("quantity", "")),
+                "image_url": p.get("image_url", ""),
+                "promotion_detected": p.get("promotion_analysis", {}).get("promotion_detected", False),
+                "detected_keywords": ";".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
+                "price_old": p.get("price_old", ""),
+                "price_new": p.get("price_new", ""),
+                "discount": p.get("discount", ""),
+                "promo_labels": ";".join(p.get("promo_labels", [])),
+            }
+            add_product(product_data)
+
+    # Генерация отчётов
+    csv_file = export_to_csv(all_products)
+    pdf_file = export_to_pdf(all_products)
+
+    return jsonify({
+        "products": all_products,
+        "csv_file": csv_file,
+        "pdf_file": pdf_file
+    })
 
 @app.route("/import/csv", methods=["POST"])
 def import_csv():
-    # 1) Проверяем файл
-    if "file" not in request.files:
-        return jsonify({"error": "Нет части form-data с файлом"}), 400
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "Не указано имя файла"}), 400
-    if not allowed_file(file.filename):
-        return jsonify({"error": "Можно загружать только .csv"}), 400
+    from backend.app import import_csv
+    return import_csv()
 
-    # 2) Сохраняем на диск
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(CSV_UPLOADS, filename)
-    file.save(filepath)
-
-    # 3) Читаем и валидируем
-    inserted = 0
-    errors = []
-    # теперь требуем полный шаблон
-    required = {
-        "name", "article", "price", "quantity",
-        "promotion_detected", "detected_keywords", "parsed_at"
-    }
-
-    with open(filepath, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        headers = set(reader.fieldnames or [])
-        if not required.issubset(headers):
-            missing = required - headers
-            return jsonify({"error": f"Отсутствуют колонки: {', '.join(missing)}"}), 400
-
-        for idx, row in enumerate(reader, start=2):
-            try:
-                name    = row["name"].strip()
-                article = row["article"].strip()
-                price   = float(row["price"].strip().replace(",", "."))
-                quantity= int(row["quantity"].strip())
-            except Exception:
-                errors.append(f"Строка {idx}: неверный price или quantity")
-                continue
-
-            # promotion_detected → bool
-            pd_raw = row["promotion_detected"].strip().lower()
-            promo_flag = pd_raw in ("1", "true", "yes")
-
-            # detected_keywords
-            keywords = row["detected_keywords"].strip()
-
-            # parsed_at -> datetime
-            try:
-                parsed_at = datetime.fromisoformat(row["parsed_at"].strip())
-            except Exception:
-                errors.append(f"Строка {idx}: неверный parsed_at (ожидается ISO)")
-                continue
-
-            # image_url опционально
-            image_url = row.get("image_url", "").strip() or None
-
-            data = {
-                "name":               name,
-                "article":            article,
-                "price":              price,
-                "quantity":           quantity,
-                "image_url":          image_url,
-                "promotion_detected": promo_flag,
-                "detected_keywords":  keywords,
-                "parsed_at":          parsed_at,
-            }
-
-            try:
-                add_product(data)
-                inserted += 1
-            except Exception as e:
-                errors.append(f"Строка {idx}: ошибка БД: {e}")
-
-    return jsonify({
-        "inserted": inserted,
-        "errors":   errors,
-        "file":     filename
-    }), 200
-
-@app.route('/start', methods=['POST'])
-def start_analysis():
-    file = request.files.get('config_file')
-    if not file:
-        return jsonify({"error": "Нет файла конфигурации"}), 400
-    path = os.path.join('config', secure_filename(file.filename))
-    file.save(path)
-    try:
-        settings = config_parser.read_config(path)
-    except Exception as e:
-        return jsonify({"error": f"Ошибка парсинга конфига: {e}"}), 400
-
-    urls = settings.get('SEARCH', {}).get('urls', '')
-    cats = [c.strip() for c in settings.get('SEARCH', {}).get('categories','').split(',') if c.strip()]
-    save_html = request.form.get('save_html') or None
-
-    all_products = []
-    for u in urls.split(','):
-        u = u.strip()
-        if not u:
-            continue
-        try:
-            logger.info(f"🔍 Начинаем парсинг URL: {u} (dump: {save_html})")
-            prods = scraper.scrape_marketplace(u, category_filter=cats, limit=10, save_html=save_html)
-            if settings.get('EXPORT', {}).get('save_to_db', 'false').lower() == 'true':
-                for p in prods:
-                    add_product(p)
-            all_products.extend(prods)
-        except Exception as e:
-            logger.error(f"Ошибка при скрапинге {u}: {e}")
-            continue
-
-    # … promo-анализ, сравнение, экспорт … (без изменений) …
-
-    promo = PromoDetector()
-    for p in all_products:
-        if p.get('image_url'):
-            try:
-                import tempfile, requests
-                r = requests.get(p['image_url'], timeout=10)
-                if r.status_code == 200:
-                    tf = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-                    tf.write(r.content); tf.close()
-                    p['promotion_analysis'] = promo.predict_promotion(tf.name)
-                    os.remove(tf.name)
-                else:
-                    p['promotion_analysis'] = {"error": "img load failed"}
-            except Exception as ex:
-                logger.error(ex)
-                p['promotion_analysis'] = {"error": str(ex)}
-        else:
-            p['promotion_analysis'] = {"error": "no image"}
-
-    analysis = {}
-    if len(all_products) >= 2:
-        analysis = compare_product_data(all_products[-2], all_products[-1])
-
-    csvf, pdff = 'exported.csv', 'exported.pdf'
-    try:
-        export_to_csv(all_products, csvf)
-        export_to_pdf(all_products, pdff)
-    except Exception as e:
-        logger.error(f"Ошибка экспорта: {e}")
-
-    return jsonify({
-        "products":   all_products,
-        "analysis":   analysis,
-        "csv_file":   csvf,
-        "pdf_file":   pdff
-    })
-
-@app.route('/download/<kind>', methods=['GET'])
-def download(kind):
-    if kind == 'csv':
-        fn = 'exported.csv'
-    elif kind == 'pdf':
-        fn = 'exported.pdf'
-    else:
-        return jsonify({"error": "bad type"}), 400
-    path = os.path.join(os.getcwd(), fn)
-    if not os.path.exists(path):
-        return jsonify({"error": "not found"}), 404
-    return send_file(path, as_attachment=True, download_name=fn)
-
-@app.route('/products', methods=['GET'])
-def list_products():
-    out = []
-    for p in get_products():
-        out.append({
-            "id":        p.id,
-            "name":      p.name,
-            "article":   p.article,
-            "price":     p.price,
-            "quantity":  p.quantity,
+@app.route("/products", methods=["GET"])
+def products_route():
+    prods = get_products()
+    output = []
+    for p in prods:
+        output.append({
+            "id": p.id,
+            "name": p.name,
+            "article": p.article,
+            "price": p.price,
+            "quantity": p.quantity,
             "image_url": p.image_url,
-            "timestamp": getattr(p, "timestamp", None)
+            "promotion_detected": p.promotion_detected,
+            "detected_keywords": p.detected_keywords.split(";") if p.detected_keywords else [],
+            # Новые поля
+            "price_old": p.price_old,
+            "price_new": p.price_new,
+            "discount": p.discount,
+            "promo_labels": p.promo_labels.split(";") if p.promo_labels else [],
+            "parsed_at": p.parsed_at.isoformat() if p.parsed_at else None,
+            "timestamp": p.timestamp.isoformat(),
         })
-    return jsonify(out)
+    return jsonify(output)
 
-@app.route('/dashboard', methods=['GET'])
-def dashboard_data():
-    products = list(get_products())
-    summary = {"products_count": len(products)}
-    if len(products) >= 2:
-        try:
-            summary["last_compare"] = compare_product_data(products[-2], products[-1])
-        except Exception as e:
-            summary["error"] = str(e)
-    return jsonify(summary)
+@app.route("/products/history/<string:article>", methods=["GET"])
+def product_history(article):
+    """
+    Возвращает JSON-массив с историей изменений по данному артикулу.
+    """
+    try:
+        history = get_product_history(article)
+        if not history:
+            return jsonify({"error": "История не найдена"}), 404
+        return jsonify(history)
+    except Exception as e:
+        logger.error(f"Error getting history for {article}: {e}")
+        return jsonify({"error": "Внутренняя ошибка"}), 500
+    
 
-@app.route('/reports', methods=['GET'])
-def reports_data():
-    reports_list = []
-    if os.path.exists('exported.csv'):
-        reports_list.append({"id": "csv", "title": "Экспорт CSV"})
-    if os.path.exists('exported.pdf'):
-        reports_list.append({"id": "pdf", "title": "Отчёт PDF"})
-    return jsonify(reports_list)
+@app.route("/export/product/<string:article>", methods=["GET"])
+def export_product_report(article):
+    """
+    Экспорт PDF с графиками по товару article.
+    """
+    try:
+        filepath = export_product_pdf(article)
+        # download_name — имя файла, отправляемое клиенту
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=os.path.basename(filepath),
+            mimetype="application/pdf"
+        )
+    except FileNotFoundError:
+        abort(404, description="История товара не найдена")
+    except Exception as e:
+        logger.error(f"Error exporting product PDF {article}: {e}")
+        abort(500, description="Ошибка формирования отчёта")
+        
+
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    from backend.app import dashboard  # noqa: F401
+    return dashboard()
+
+@app.route("/reports", methods=["GET"])
+def reports():
+    from backend.app import reports  # noqa: F401
+    return reports()
+
+@app.route("/download/<kind>", methods=["GET"])
+def download(kind):
+    from backend.app import download  # noqa: F401
+    return download(kind)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

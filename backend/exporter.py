@@ -1,131 +1,169 @@
-# exporter.py
-
+# backend/exporter.py
 import os
-from datetime import datetime, timezone
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
+import csv
+from datetime import datetime
+from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Image, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.rl_config import defaultPageSize
+from backend.database import get_product_history
 
-# Пути к директориям
-BACKEND_DIR = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, os.pardir))
-PDF_DIR = os.path.join(PROJECT_ROOT, "pdf_results")
-CSV_DIR = os.path.join(PROJECT_ROOT, "csv_results")
-os.makedirs(PDF_DIR, exist_ok=True)
-os.makedirs(CSV_DIR, exist_ok=True)
+# Папки для отчётов
+CSV_RESULTS = "csv_results"
+PDF_RESULTS = "pdf_results"
 
-# Регистрируем кириллический шрифт
-FONT_FILENAME = os.path.join(BACKEND_DIR, "DejaVuSans.ttf")
-pdfmetrics.registerFont(TTFont("DejaVuSans", FONT_FILENAME))
+os.makedirs(CSV_RESULTS, exist_ok=True)
+os.makedirs(PDF_RESULTS, exist_ok=True)
 
-# Стили
-base_style = ParagraphStyle(
-    name="BaseStyle",
-    fontName="DejaVuSans",
-    fontSize=9,
-    leading=11,
-    wordWrap="CJK"
-)
-small_style = ParagraphStyle(
-    name="SmallStyle",
-    fontName="DejaVuSans",
-    fontSize=7,
-    leading=8,
-    alignment=1,
-    wordWrap="CJK"
-)
+# Регистрация шрифта для кириллицы
+pdfmetrics.registerFont(TTFont('DejaVuSans', 'DejaVuSans.ttf'))
 
-def _make_timestamp():
-    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
-def export_to_pdf(products: list[dict], path: str | None = None):
-    if path is None:
-        filename = f"report_{_make_timestamp()}.pdf"
-        path = os.path.join(PDF_DIR, filename)
-
-    page_w, _ = A4
-    margin = 10 * mm
-    usable_w = page_w - 2 * margin
-
-    doc = SimpleDocTemplate(
-        path,
-        pagesize=A4,
-        leftMargin=margin, rightMargin=margin,
-        topMargin=15*mm, bottomMargin=15*mm
-    )
-
-    story = [
-        Paragraph("Отчет по товарам", ParagraphStyle(
-            name="Title", fontName="DejaVuSans", fontSize=16, leading=18
-        )),
-        Spacer(1, 5*mm)
-    ]
-
-    data = [["Name","Article","Price","Qty","Promo","Keywords","ParsedAt"]]
-    for p in products:
-        ts = p.get("parsed_at", datetime.now(timezone.utc))
-        ts_text = ts.strftime("%Y-%m-%d\n%H:%M:%S")
-        promo = p.get("promotion", {})
-        keywords = promo.get("detected_keywords", [])
-        data.append([
-            Paragraph(p.get("name",""), base_style),
-            Paragraph(str(p.get("article","")), small_style),  # использует small_style
-            str(p.get("price","")),
-            str(p.get("quantity","")),
-            str(promo.get("promotion_detected", False)),
-            Paragraph(", ".join(keywords), base_style),
-            Paragraph(ts_text, small_style),
-        ])
-
-    ratios = [2,1,1,1,1,2,1]
-    total = sum(ratios)
-    colWidths = [usable_w * r/total for r in ratios]
-
-    table = Table(data, colWidths=colWidths, repeatRows=1, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("GRID",           (0,0),(-1,-1),0.4,colors.grey),
-        ("BACKGROUND",     (0,0),(-1,0),colors.HexColor("#B3DDF2")),
-        ("TEXTCOLOR",      (0,0),(-1,0),colors.black),
-        ("ALIGN",          (2,1),(3,-1),"RIGHT"),
-        ("VALIGN",         (0,0),(-1,-1),"MIDDLE"),
-        ("FONTNAME",       (0,0),(-1,-1),"DejaVuSans"),
-        ("FONTSIZE",       (0,0),(-1,0),9),    # шапка
-        ("FONTSIZE",       (1,1),(1,-1),7),    # Article — мелкий 7pt
-        ("FONTSIZE",       (6,1),(6,-1),7),    # ParsedAt — мелкий 7pt
-        ("BOTTOMPADDING",  (0,0),(-1,0),6),
-    ]))
-
-    story.append(table)
-    doc.build(story)
-    print(f"📄 PDF сохранён: {path}")
-
-def export_to_csv(products: list[dict], path: str | None = None):
-    import csv
-    if path is None:
-        filename = f"report_{_make_timestamp()}.csv"
-        path = os.path.join(CSV_DIR, filename)
+def export_to_csv(products, path=None):
+    """
+    Экспортирует список продуктов в CSV.
+    Возвращает путь к файлу.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = path or os.path.join(CSV_RESULTS, f"report_{timestamp}.csv")
 
     fieldnames = [
-        "name","article","price","quantity",
-        "promotion_detected","detected_keywords","parsed_at"
+        "name", "article", "price", "quantity",
+        "price_old", "price_new", "discount", "promo_labels",
+        "promotion_detected", "detected_keywords", "parsed_at"
     ]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+
+    with open(filename, mode="w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         for p in products:
-            ts = p.get("parsed_at", datetime.now(timezone.utc))
-            promo = p.get("promotion", {})
             writer.writerow({
-                "name":               p.get("name",""),
-                "article":            p.get("article",""),
-                "price":              p.get("price",""),
-                "quantity":           p.get("quantity",""),
-                "promotion_detected": promo.get("promotion_detected", False),
-                "detected_keywords":  ";".join(promo.get("detected_keywords", [])),
-                "parsed_at":          ts.isoformat(),
+                "name": p.get("name", ""),
+                "article": p.get("article", ""),
+                "price": p.get("price", ""),
+                "quantity": p.get("quantity", ""),
+                "price_old": p.get("price_old", ""),
+                "price_new": p.get("price_new", ""),
+                "discount": p.get("discount", ""),
+                "promo_labels": ";".join(p.get("promo_labels", [])),
+                "promotion_detected": p.get("promotion_analysis", {}).get("promotion_detected", False),
+                "detected_keywords": ";".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
+                "parsed_at": p.get("promotion_analysis", {}).get("parsed_at", datetime.now().isoformat())
             })
-    print(f"📑 CSV сохранён: {path}")
+    return filename
+
+
+def export_to_pdf(products, path=None):
+    """
+    Экспортирует список продуктов в PDF.
+    Возвращает путь к файлу.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = path or os.path.join(PDF_RESULTS, f"report_{timestamp}.pdf")
+
+    doc = SimpleDocTemplate(filename, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    styles['Normal'].fontName = 'DejaVuSans'
+
+    # Заголовки таблицы
+    data = [[
+        "Name", "Article", "Price", "Quantity",
+        "Old Price", "New Price", "Discount", "Promo Labels",
+        "Promo Detected", "Keywords", "Parsed At"
+    ]]
+
+    # Данные
+    for p in products:
+        row = [
+            Paragraph(str(p.get("name", "")), styles['Normal']),
+            str(p.get("article", "")),
+            str(p.get("price", "")),
+            str(p.get("quantity", "")),
+            str(p.get("price_old", "")),
+            str(p.get("price_new", "")),
+            str(p.get("discount", "")),
+            ", ".join(p.get("promo_labels", [])),
+            str(p.get("promotion_analysis", {}).get("promotion_detected", False)),
+            ", ".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
+            p.get("promotion_analysis", {}).get("parsed_at", datetime.now().isoformat())
+        ]
+        data.append(row)
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+    ]))
+
+    elements.append(table)
+    doc.build(elements)
+    return filename
+
+def export_product_pdf(article: str, path: str = None) -> str:
+    """
+    Формирует PDF-отчёт с графиками по одному товару.
+    Возвращает путь к сгенерированному файлу.
+    """
+    # 1. Получаем историю
+    history = get_product_history(article)
+    if not history:
+        raise FileNotFoundError(f"No history for article {article}")
+
+    # 2. Подготавливаем имя файла
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = path or os.path.join(PDF_RESULTS, f"{article}_{ts}.pdf")
+
+    # 3. Создаём PDF
+    doc = SimpleDocTemplate(filename, pagesize=letter)
+    styles = getSampleStyleSheet()
+    styles["Normal"].fontName = "DejaVuSans"
+
+    elements = []
+    elements.append(Paragraph(f"Отчёт по товару: {article}", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    # 4. По каждому параметру строим график и вставляем в PDF
+    for key, title in [
+        ("price", "Динамика цены"),
+        ("discount", "Динамика скидки"),
+        ("quantity", "Динамика остатков")
+    ]:
+        # 4.1 Подготовка данных
+        dates = [h["parsed_at"] for h in history]
+        values = []
+        for h in history:
+            v = h.get(key)
+            try:
+                # убираем лишние символы, конвертируем
+                val = float(str(v).replace("%", "").replace(",", "."))
+            except Exception:
+                val = 0.0
+            values.append(val)
+
+        # 4.2 Строим график matplotlib
+        fig, ax = plt.subplots(figsize=(6, 2.5))
+        ax.plot(dates, values, marker="o")
+        ax.set_title(title, fontname="DejaVuSans")
+        ax.tick_params(axis='x', labelrotation=45)
+        plt.tight_layout()
+
+        # 4.3 Сохраняем график во временный буфер
+        img_buffer = BytesIO()
+        fig.savefig(img_buffer, format="PNG")
+        plt.close(fig)
+        img_buffer.seek(0)
+
+        # 4.4 Вставляем в PDF
+        elements.append(Paragraph(title, styles["Heading2"]))
+        elements.append(Image(img_buffer, width=400, height=150))
+        elements.append(Spacer(1, 12))
+
+    # 5. Генерируем и возвращаем путь
+    doc.build(elements)
+    return filename

@@ -1,91 +1,99 @@
 # backend/database.py
 
-import os
-import sys
-from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import models
-from loguru import logger
+from sqlalchemy.exc import SQLAlchemyError
+from backend.models import Base, Product
+import os
 
-# Выбираем URL БД: при тестах — память, иначе — из окружения
-if any('pytest' in arg for arg in sys.argv):
-    DATABASE_URL = "sqlite:///:memory:"
-else:
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")
+from sqlalchemy import asc
+from backend.models import Product
 
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine)
-
-Base    = models.Base
-Product = models.Product
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
-    """
-    Создаёт все таблицы в базе данных (если они ещё не созданы).
-    """
     Base.metadata.create_all(bind=engine)
 
-def add_product(product_data: dict):
+def add_product(product_data: dict) -> Product:
     """
-    Добавляет информацию о продукте в базу данных.
-    
-    Args:
-      product_data: dict с ключами:
-        - name (str)
-        - article (str)
-        - price (str or float)
-        - quantity (str or int)
-        - image_url (str, optional)
-        - promotion_detected (bool, optional)
-        - detected_keywords (str, optional) — ключевые слова через ';'
-        - parsed_at (datetime, optional)
-    Returns:
-      Экземпляр Product, добавленный в БД.
+    product_data должен содержать ключи:
+    name, article, price, quantity, image_url,
+    promotion_detected, detected_keywords,
+    price_old, price_new, discount, promo_labels,
+    parsed_at (строка ISO или datetime)
     """
     session = SessionLocal()
     try:
-        # Если parsed_at передали строкой, пытаемся преобразовать
-        if "parsed_at" in product_data and isinstance(product_data["parsed_at"], str):
-            try:
-                product_data["parsed_at"] = datetime.fromisoformat(product_data["parsed_at"])
-            except ValueError:
-                # некорректный формат — выбрасываем
-                raise ValueError(f"parsed_at имеет неверный ISO-формат: {product_data['parsed_at']}")
-        product = Product(**product_data)
-        session.add(product)
+        # Обработка parsed_at
+        parsed_at = None
+        if "parsed_at" in product_data and product_data["parsed_at"]:
+            from datetime import datetime
+            val = product_data["parsed_at"]
+            parsed_at = (
+                val if isinstance(val, datetime)
+                else datetime.fromisoformat(val)
+            )
+
+        prod = Product(
+            name=product_data.get("name", ""),
+            article=product_data.get("article", ""),
+            price=product_data.get("price", ""),
+            quantity=product_data.get("quantity", ""),
+            image_url=product_data.get("image_url", None),
+
+            promotion_detected=product_data.get("promotion_detected", False),
+            detected_keywords=product_data.get("detected_keywords", ""),
+
+            # === Новые поля ===
+            price_old=product_data.get("price_old", None),
+            price_new=product_data.get("price_new", None),
+            discount=product_data.get("discount", None),
+            promo_labels=product_data.get("promo_labels", None),
+
+            parsed_at=parsed_at
+        )
+        session.add(prod)
         session.commit()
-        session.refresh(product)
-        logger.info(f"Добавлен продукт в БД: {product.name} (арт. {product.article})")
-        return product
+        session.refresh(prod)
+        return prod
+    except SQLAlchemyError:
+        session.rollback()
+        raise
     finally:
         session.close()
 
 def get_products():
-    """
-    Возвращает список всех продуктов из базы данных.
-    
-    Returns:
-      List[Product]
-    """
     session = SessionLocal()
     try:
         return session.query(Product).all()
     finally:
         session.close()
 
-if __name__ == "__main__":
-    init_db()
-    # пример
-    sample = {
-        "name":               "Тест",
-        "article":            "TEST001",
-        "price":              "100",
-        "quantity":           "5",
-        "image_url":          "",
-        "promotion_detected": True,
-        "detected_keywords":  "скидка;акция",
-        "parsed_at":          "2025-05-12T12:00:00"
-    }
-    added = add_product(sample)
-    print("Добавлен продукт:", added)
+def get_product_history(article: str):
+    """
+    Возвращает список записей Product для данного article,
+    отсортированных по parsed_at по возрастанию.
+    """
+    session = SessionLocal()
+    try:
+        rows = (
+            session.query(Product)
+            .filter(Product.article == article)
+            .order_by(asc(Product.parsed_at))
+            .all()
+        )
+        history = []
+        for p in rows:
+            history.append({
+                "parsed_at": p.parsed_at.isoformat() if p.parsed_at else None,
+                "price": p.price,
+                "price_old": p.price_old,
+                "price_new": p.price_new,
+                "discount": p.discount,
+                "quantity": p.quantity,
+            })
+        return history
+    finally:
+        session.close()

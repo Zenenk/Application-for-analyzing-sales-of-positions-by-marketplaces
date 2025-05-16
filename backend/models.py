@@ -1,9 +1,7 @@
-"""
-Модели базы данных (определения таблиц) для SQLAlchemy.
-"""
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
-from sqlalchemy.sql import func
+# backend/models.py
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
+from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
@@ -11,31 +9,30 @@ class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
-    name               = Column(String, nullable=False)
-    article            = Column(String, nullable=False)
-    price              = Column(String, nullable=False)
-    quantity           = Column(String, nullable=False)
-    image_url          = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    article = Column(String, nullable=False)
+    price = Column(String, nullable=False)
+    quantity = Column(String, nullable=False)
+    image_url = Column(String, nullable=True)
 
-    # Новые поля
-    promotion_detected = Column(Boolean, default=False, nullable=False)
-    detected_keywords  = Column(String, nullable=True)     # ключевые слова через ';'
-    parsed_at          = Column(DateTime(timezone=True), nullable=True)
+    promotion_detected = Column(Boolean, default=False)
+    detected_keywords = Column(String, nullable=True)
 
-    # Время вставки записи (если parsed_at не передан, можно ориентироваться на timestamp)
-    timestamp          = Column(DateTime(timezone=True), server_default=func.now())
+    # Новые поля для хранения данных скидок и промо-лейблов
+    price_old    = Column(String, nullable=True)
+    price_new    = Column(String, nullable=True)
+    discount     = Column(String, nullable=True)
+    promo_labels = Column(String, nullable=True)
+
+    parsed_at = Column(DateTime(timezone=True), nullable=True)
+    timestamp = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
 
     def __repr__(self):
         return (
-            f"<Product("
-            f"name='{self.name}', "
-            f"article='{self.article}', "
-            f"price='{self.price}', "
-            f"quantity='{self.quantity}', "
-            f"image_url='{self.image_url}', "
-            f"promotion_detected={self.promotion_detected}, "
-            f"detected_keywords='{self.detected_keywords}', "
-            f"parsed_at='{self.parsed_at}', "
-            f"timestamp='{self.timestamp}'"
-            f")>"
+            f"<Product(id={self.id!r}, name={self.name!r}, article={self.article!r}, "
+            f"price={self.price!r}, quantity={self.quantity!r})>"
         )
