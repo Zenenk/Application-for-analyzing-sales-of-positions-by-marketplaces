@@ -1,9 +1,8 @@
 import axios from 'axios';
 
-// Базовый URL можно настроить через .env (REACT_APP_API_BASE); по умолчанию – префикс /api на текущем хосте
+// Базовый URL для всех запросов (подставляется при сборке из .env)
 axios.defaults.baseURL = process.env.REACT_APP_API_BASE || '/api';
 
-// Объект с методами API
 const API = {
   startProcess(settings) {
     return axios.post('/start', settings || {}).then(res => res.data);
@@ -18,17 +17,25 @@ const API = {
     return axios.get('/products').then(res => res.data);
   },
   downloadPdf() {
-    window.open('/download/pdf', '_blank');
+    window.open(`${axios.defaults.baseURL}/download/pdf`, '_blank');
   },
   downloadCsv() {
-    window.open('/download/csv', '_blank');
+    window.open(`${axios.defaults.baseURL}/download/csv`, '_blank');
   }
 };
 
-// Именованный экспорт для getProducts
 export function getProducts() {
   return API.getProductList();
 }
 
-// По-старому экспортируем API как default
+API.importCsv = function(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return axios
+    .post("/import/csv", form, {
+      headers: { "Content-Type": "multipart/form-data" }
+    })
+    .then(res => res.data);
+};
+
 export default API;

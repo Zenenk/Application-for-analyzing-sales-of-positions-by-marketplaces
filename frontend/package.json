@@ -2,39 +2,33 @@
   "name": "application_for_analyzing_sales_of_positions_by_marketplaces",
   "version": "1.0.0",
   "private": true,
-  "description": "React-SPA для визуализации и управления аналитикой продаж на маркетплейсах",
-  "author": "Zenenk",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test --env=jsdom",
-    "eject": "react-scripts eject",
-    "lint": "eslint 'src/**/*.{js,jsx}'",
-    "format": "prettier --write 'src/**/*.{js,jsx,css,md}'",
-    "start:backend": "cd ../backend && python -m backend.app",
-    "start:all": "concurrently \\\"npm start\\\" \\\"npm run start:backend\\\""
+    "test":  "react-scripts test --env=jsdom",
+    "lint":  "eslint 'src/**/*.{js,jsx}'",
+    "format":"prettier --write 'src/**/*.{js,jsx,css,md}'"
   },
   "dependencies": {
-    "axios": "^1.3.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "axios":            "^1.3.0",
+    "react":            "^18.2.0",
+    "react-dom":        "^18.2.0",
     "react-router-dom": "^6.6.1",
-    "recharts": "^2.4.2",
-    "swagger-ui-react": "^4.15.5"
+    "recharts":         "^2.4.2"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^5.16.5",
-    "@testing-library/react": "^13.4.0",
+    "@testing-library/jest-dom":   "^5.16.5",
+    "@testing-library/react":      "^13.4.0",
     "@testing-library/user-event": "^14.4.3",
-    "autoprefixer": "^10.4.12",
-    "postcss": "^8.4.18",
-    "prettier": "^2.7.1",
-    "react-scripts": "5.0.1",
-    "tailwindcss": "^3.2.1",
-    "concurrently": "^7.6.0"
+    "autoprefixer":                "^10.4.12",
+    "eslint":                      "^8.39.0",
+    "postcss":                     "^8.4.18",
+    "prettier":                    "^2.7.1",
+    "react-scripts":               "5.0.1",
+    "tailwindcss":                 "^3.2.1"
   },
   "browserslist": {
-    "production": [
+    "production":  [
       ">0.2%",
       "not dead",
       "not op_mini all"
@@ -45,5 +39,5 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5000"
+  "proxy": "http://localhost:5001"
 }

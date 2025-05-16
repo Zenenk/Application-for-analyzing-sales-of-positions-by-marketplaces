@@ -4,17 +4,13 @@
 
 **Функциональность:**
 
-- Получение и парсинг данных с веб-страниц маркетплейсов (с помощью Selenium, BeautifulSoup).
+- Получение и парсинг данных с веб-страниц маркетплейсов (с помощью Playwright, BeautifulSoup).
 - Анализ цен и остатков товаров во времени, сравнение изменений (модуль `analysis.py`).
-- Распознавание текста на изображениях (OCR с использованием OpenCV и Tesseract OCR) и выявление промо-акций на изображениях (модуль `promo_detector.py` с TensorFlow/Keras).
-- Сохранение данных товаров в базе данных (SQLite по умолчанию, либо Postgres, через SQLAlchemy).
+- Распознавание текста на изображениях (OCR с использованием EasyOCR и Tesseract OCR) и выявление промо-акций на изображениях (модуль `promo_detector.py` с TensorFlow/Keras).
+- Сохранение данных товаров в базе данных (Postgres через SQLAlchemy).
 - Экспорт данных в CSV и PDF отчёты (модуль `exporter.py`).
 - REST API (Flask) с документированием через OpenAPI (см. `openapi.yaml`).
-- 100% покрытие кода тестами (Pytest/Unittest, см. директорию `tests/`).
 
 **Запуск:**
 
 - **Локально:** Установить зависимости из `requirements.txt`. Для запуска Flask-приложения:
-  ```bash
-  export FLASK_APP=backend/app.py
-  flask run

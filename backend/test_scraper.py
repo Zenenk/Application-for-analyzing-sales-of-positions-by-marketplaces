@@ -1,6 +1,7 @@
 # backend/test_scraper.py
 
 from scraper import MarketplaceScraper
+from backend.database import add_product
 
 def main():
     markets = ["Ozon", "Wildberries"]
@@ -15,6 +16,13 @@ def main():
             print(f"Found {len(items)} items")
             for idx, p in enumerate(items, start=1):
                 print(f" {idx}. {p['name']} — SKU {p['sku']} — {p['price']} ₽ — image={p['image']}")
+                add_product({
+                    "name":       p["name"],
+                    "article":    p["sku"],
+                    "price":      p["price"],
+                    "quantity":   p.get("stock", 0),
+                    "image_url":  p["image"]
+                })
         
         # ——— Тестируем одиночный товар Ozon ———
         print("\n=== Ozon single product ===")
