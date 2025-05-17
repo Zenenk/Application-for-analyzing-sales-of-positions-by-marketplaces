@@ -1,58 +1,65 @@
+# backend/config_parser.py
 import os
 import configparser
 
+
 def read_config(path: str) -> dict:
     """
-    Считывает произвольный INI-файл по пути `path`
-    и возвращает словарь вида {section: {option: value, ...}, ...}.
+    Считывает INI-файл по пути `path` и возвращает структуру:
+      {
+        "SCRAPER":      {"user_agent": str, "proxy": str|None},
+        "MARKETPLACES": {"marketplaces": [str, ...]},
+        "SEARCH":       {"urls": [...], "categories": [...], "articles": [...]},
+        "EXPORT":       {"format": str, "save_to_db": bool}
+      }
     """
-    parser = configparser.ConfigParser(interpolation=None)
-    read_files = parser.read(path, encoding="utf-8")
-    if not read_files:
-        raise FileNotFoundError(f"Cannot read config file at {path}")
-    result = {}
-    for section in parser.sections():
-        result[section] = dict(parser.items(section))
-    return result
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Конфиг не найден по пути: {path}")
 
-# По умолчанию читаем конфиг из backend/config/config.conf или из переменной окружения CONFIG_PATH
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read(path, encoding="utf-8")
+
+    # --- SCRAPER ---
+    scraper_section = "SCRAPER"
+    user_agent = cp.get(scraper_section, "user_agent", fallback="")
+    proxy = cp.get(scraper_section, "proxy", fallback="") or None
+
+    # --- MARKETPLACES ---
+    mp_section = "MARKETPLACES"
+    mp_list = (
+        cp.get(mp_section, "marketplaces", fallback="")
+        .split(",")
+    )
+    marketplaces = [m.strip() for m in mp_list if m.strip()]
+
+    # --- SEARCH ---
+    search_section = "SEARCH"
+    urls = [u.strip() for u in cp.get(search_section, "urls", "").split(",") if u.strip()]
+    categories = [c.strip() for c in cp.get(search_section, "categories", "").split(",") if c.strip()]
+    articles   = [a.strip() for a in cp.get(search_section, "articles",   "").split(",") if a.strip()]
+
+    # --- EXPORT ---
+    export_section = "EXPORT"
+    fmt = cp.get(export_section, "format", fallback="CSV")
+    save_to_db = cp.getboolean(export_section, "save_to_db", fallback=False)
+
+    return {
+        "SCRAPER":      {"user_agent": user_agent, "proxy": proxy},
+        "MARKETPLACES": {"marketplaces": marketplaces},
+        "SEARCH":       {"urls": urls, "categories": categories, "articles": articles},
+        "EXPORT":       {"format": fmt, "save_to_db": save_to_db},
+    }
+
+
+# --- Default config load on import ---
 DEFAULT_CONFIG_PATH = os.getenv(
     "CONFIG_PATH",
     os.path.join(os.path.dirname(__file__), "config", "config.conf")
 )
 
-# Загружаем его сразу при импорте
-_parser = configparser.ConfigParser(interpolation=None)
-_files = _parser.read(DEFAULT_CONFIG_PATH, encoding="utf-8")
-if not _files:
-    raise FileNotFoundError(f"Cannot read default config file at {DEFAULT_CONFIG_PATH}")
+_config = read_config(DEFAULT_CONFIG_PATH)
 
-# --- SCRAPER ---
-SCRAPER = {
-    "user_agent": _parser.get("SCRAPER", "user_agent", fallback=""),
-    "proxy": _parser.get("SCRAPER", "proxy", fallback="") or None
-}
-
-# --- MARKETPLACES ---
-MARKETPLACES = [
-    m.strip() for m in _parser.get("MARKETPLACES", "marketplaces", fallback="").split(",")
-    if m.strip()
-]
-
-# --- SEARCH ---
-SEARCH = {
-    "categories": [
-        c.strip() for c in _parser.get("SEARCH", "categories", fallback="").split(",")
-        if c.strip()
-    ],
-    "urls": [
-        u.strip() for u in _parser.get("SEARCH", "urls", fallback="").split(",")
-        if u.strip()
-    ]
-}
-
-# --- EXPORT ---
-EXPORT = {
-    "format": _parser.get("EXPORT", "format", fallback="CSV"),
-    "save_to_db": _parser.getboolean("EXPORT", "save_to_db", fallback=True)
-}
+SCRAPER      = _config["SCRAPER"]
+MARKETPLACES = _config["MARKETPLACES"]["marketplaces"]
+SEARCH       = _config["SEARCH"]
+EXPORT       = _config["EXPORT"]

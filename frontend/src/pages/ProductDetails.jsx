@@ -1,8 +1,7 @@
 // frontend/src/pages/ProductDetails.jsx
-
 import React, { useContext, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { getProductHistory } from '../services/api';
+import API from '../services/api';
 import { ProductsContext } from '../components/ProductsProvider';
 import {
   LineChart,
@@ -16,25 +15,24 @@ import {
 const ProductDetails = () => {
   const { id } = useParams();
   const { products } = useContext(ProductsContext);
-  const product = products.find((p) => p.id === Number(id));
+  const product = products.find(p => p.id === Number(id));
 
-  // Состояния для истории
   const [historyData, setHistoryData] = useState([]);
   const [historyError, setHistoryError] = useState(null);
+
+  useEffect(() => {
+    if (!product) return;
+    API.getProductHistory(product.article)
+      .then(data => setHistoryData(data))
+      .catch(err => {
+        console.error('Error fetching history:', err);
+        setHistoryError('Не удалось загрузить историю');
+      });
+  }, [product]);
 
   if (!product) {
     return <p>Товар не найден.</p>;
   }
-
-  // Загрузка истории по артикулу
-  useEffect(() => {
-    getProductHistory(product.article)
-      .then((data) => setHistoryData(data))
-      .catch((err) => {
-        console.error('Error fetching history:', err);
-        setHistoryError('Не удалось загрузить историю');
-      });
-  }, [product.article]);
 
   const {
     name,
@@ -50,7 +48,6 @@ const ProductDetails = () => {
     previousSales
   } = product;
 
-  // Расчёт изменения продаж
   let changePercent = null;
   if (currentSales != null && previousSales != null) {
     if (previousSales === 0 && currentSales > 0) {
@@ -61,21 +58,20 @@ const ProductDetails = () => {
     }
   }
 
-  // Вычисление длительности текущей акции
   const renderPromoDuration = () => {
-    // отфильтровываем записи со скидкой > 0
-    const nonZero = historyData
+    const indices = historyData
       .map((h, i) => ({ idx: i, val: parseFloat(h.discount) || 0 }))
-      .filter((item) => item.val > 0)
-      .map((item) => item.idx);
-    if (nonZero.length === 0) return null;
-
-    const first = historyData[nonZero[0]].parsed_at;
-    const last = historyData[nonZero[nonZero.length - 1]].parsed_at;
-    const start = new Date(first);
-    const end = new Date(last);
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-    return <p>Акция длится уже {days} {days === 1 ? 'день' : 'дня'}.</p>;
+      .filter(item => item.val > 0)
+      .map(item => item.idx);
+    if (indices.length === 0) return null;
+    const startDate = new Date(historyData[indices[0]].parsed_at);
+    const endDate = new Date(historyData[indices[indices.length - 1]].parsed_at);
+    const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    return (
+      <p className="mt-2">
+        Акция длится уже {days} {days === 1 ? 'день' : 'дня'}.
+      </p>
+    );
   };
 
   return (
@@ -88,21 +84,17 @@ const ProductDetails = () => {
       {category && <p>Категория: {category}</p>}
       {marketplace && <p>Маркетплейс: {marketplace}</p>}
 
-      {/* Скидки и промо */}
       {price_old && (
         <p className="line-through text-gray-500">Старая цена: {price_old}</p>
       )}
       {price_new && (
         <p className="text-red-600 font-semibold">Новая цена: {price_new}</p>
       )}
-      {discount && (
-        <p className="text-green-600">Скидка: {discount}</p>
-      )}
+      {discount && <p className="text-green-600">Скидка: {discount}</p>}
       {promo_labels && promo_labels.length > 0 && (
         <p>Промо-лейблы: {promo_labels.join(', ')}</p>
       )}
 
-      {/* Продажи */}
       {currentSales != null && (
         <div>
           <p>Продажи (текущие): {currentSales}</p>
@@ -118,85 +110,51 @@ const ProductDetails = () => {
         </div>
       )}
 
-      {/* Ошибка загрузки истории */}
-      {historyError && (
-        <div className="text-red-600">{historyError}</div>
-      )}
+      {historyError && <div className="text-red-600">{historyError}</div>}
 
-      {/* Графики истории */}
       {historyData.length > 0 && (
         <div className="space-y-8">
-          {/* Цена */}
-          <div>
-            <h3 className="font-semibold mb-2">Динамика цены</h3>
-            <div style={{ width: '100%', height: 250 }}>
-              <ResponsiveContainer>
-                <LineChart data={historyData}>
-                  <XAxis dataKey="parsed_at" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="price"
-                    name="Цена"
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+          {['price', 'discount', 'quantity'].map((key, idx) => (
+            <div key={key}>
+              <h3 className="font-semibold mb-2">
+                {key === 'price'
+                  ? 'Динамика цены'
+                  : key === 'discount'
+                  ? 'Динамика скидки'
+                  : 'Динамика остатков'}
+              </h3>
+              <div style={{ width: '100%', height: 250 }}>
+                <ResponsiveContainer>
+                  <LineChart data={historyData}>
+                    <XAxis dataKey="parsed_at" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey={key}
+                      name={
+                        key === 'price'
+                          ? 'Цена'
+                          : key === 'discount'
+                          ? 'Скидка'
+                          : 'Остаток'
+                      }
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
-
-          {/* Скидка */}
-          <div>
-            <h3 className="font-semibold mb-2">Динамика скидки</h3>
-            <div style={{ width: '100%', height: 250 }}>
-              <ResponsiveContainer>
-                <LineChart data={historyData}>
-                  <XAxis dataKey="parsed_at" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="discount"
-                    name="Скидка"
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Остатки */}
-          <div>
-            <h3 className="font-semibold mb-2">Остатки на складе</h3>
-            <div style={{ width: '100%', height: 250 }}>
-              <ResponsiveContainer>
-                <LineChart data={historyData}>
-                  <XAxis dataKey="parsed_at" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="quantity"
-                    name="Остаток"
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Длительность акции */}
-          <div className="mt-4 text-lg">
-            {renderPromoDuration()}
-          </div>
-          {/* Кнопка экспорта PDF */}
+          ))}
+          {renderPromoDuration()}
           <button
             onClick={() => {
-              const url = `/api/export/product/${encodeURIComponent(article)}`;
-              window.open(url, "_blank");
+              window.open(
+                `/api/export/product/${encodeURIComponent(article)}`,
+                '_blank'
+              );
             }}
-            className="mt-6 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+            className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
           >
             Экспорт PDF с инфографикой
           </button>

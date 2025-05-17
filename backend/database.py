@@ -1,13 +1,12 @@
 # backend/database.py
 
-from sqlalchemy import create_engine
+
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine, asc
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 from backend.models import Base, Product
 import os
-
-from sqlalchemy import asc
-from backend.models import Product
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -73,7 +72,7 @@ def get_products():
 
 def get_product_history(article: str):
     """
-    Возвращает список записей Product для данного article,
+    Возвращает список словарей с историей по артикулу,
     отсортированных по parsed_at по возрастанию.
     """
     session = SessionLocal()
@@ -95,5 +94,24 @@ def get_product_history(article: str):
                 "quantity": p.quantity,
             })
         return history
+    finally:
+        session.close()
+
+def clean_old_data(days: int = 60) -> int:
+    """
+    Удаляет все записи из таблицы products,
+    у которых timestamp ранее, чем сейчас минус days.
+    Возвращает число удалённых записей.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    session = SessionLocal()
+    try:
+        deleted = (
+            session.query(Product)
+            .filter(Product.timestamp < cutoff)
+            .delete(synchronize_session=False)
+        )
+        session.commit()
+        return deleted
     finally:
         session.close()

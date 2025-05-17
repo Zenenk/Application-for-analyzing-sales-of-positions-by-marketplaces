@@ -18,7 +18,11 @@ class Product(Base):
     promotion_detected = Column(Boolean, default=False)
     detected_keywords = Column(String, nullable=True)
 
-    # Новые поля для хранения данных скидок и промо-лейблов
+    # Поля для категории и маркетплейса
+    marketplace = Column(String, nullable=True)
+    category    = Column(String, nullable=True)
+
+    # Поля для хранения данных скидок и промо-лейблов
     price_old    = Column(String, nullable=True)
     price_new    = Column(String, nullable=True)
     discount     = Column(String, nullable=True)

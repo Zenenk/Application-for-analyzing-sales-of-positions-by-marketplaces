@@ -1,13 +1,13 @@
 // frontend/src/pages/ProductList.jsx
-
 import React, { useEffect, useState, useMemo } from 'react';
 import API from '../services/api';
 import ProductCard from '../components/ProductCard';
 import { sortByHierarchy } from '../utils/sortProducts';
+import { sortByHierarchy } from '../utils/sortProducts';
 
 function ProductList() {
   const [products, setProducts] = useState(null);
-  const [error, setError]       = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     API.getProductList()
@@ -18,10 +18,8 @@ function ProductList() {
       });
   }, []);
 
-  // Сортируем продукты по иерархии после загрузки
   const sortedProducts = useMemo(() => {
     if (!products) return [];
-    // Копируем массив, чтобы не мутировать оригинал
     return [...products].sort(sortByHierarchy);
   }, [products]);
 

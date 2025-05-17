@@ -4,10 +4,14 @@
 и сохранения извлечённых параметров в базу данных.
 Использует EasyOCR для извлечения текста.
 """
+import logging
+import os
 import re
 import sys
 import easyocr
 from backend.database import add_product
+
+logger = logging.getLogger(__name__)
 
 # Инициализация OCR-ридера (русский и английский)
 _reader = easyocr.Reader(['ru', 'en'], gpu=False)
@@ -68,27 +72,34 @@ def parse_screenshot(image_path: str, marketplace: str) -> dict:
 
 
 def import_from_screenshot(image_path: str, marketplace: str) -> None:
-    """
-    Распознаёт и сохраняет данные в БД через add_product.
-    """
+    os.makedirs("uploads", exist_ok=True)
     data = parse_screenshot(image_path, marketplace)
-    # Готовим структуру для add_product
+    article = data["article"]
+    if not article:
+        raise ValueError("Не распознан артикул")
     product_data = {
-        'name':             '',  # имя можно оставить пустым или добавить OCR-распознавание заголовка
-        'article':          data['article'],
-        'price':            data['price_new'],
-        'quantity':         '',
-        'image_url':        '',
-        'promotion_detected': bool(data['discount'] or data['promo_labels']),
-        'detected_keywords': ';'.join(data['promo_labels']),
-        'price_old':        data['price_old'],
-        'price_new':        data['price_new'],
-        'discount':         data['discount'],
-        'promo_labels':     ';'.join(data['promo_labels']),
-        'parsed_at':        None,
+        "name": "",
+        "article": article,
+        "price": data["price_new"],
+        "quantity": "",
+        "image_url": "",
+        "promotion_detected": bool(data["discount"] or data["promo_labels"]),
+        "detected_keywords": ";".join(data["promo_labels"]),
+        "price_old": data["price_old"],
+        "price_new": data["price_new"],
+        "discount": data["discount"],
+        "promo_labels": ";".join(data["promo_labels"]),
+        "parsed_at": None,
+        "marketplace": marketplace,
+        "category": "",
     }
-    add_product(product_data)
-    print(f"Данные импортированы в БД: {product_data}")
+    try:
+        add_product(product_data)
+        logger.info(f"Скриншот импортирован: артикул={article}")
+    except Exception as e:
+        logger.error(f"Ошибка сохранения из скриншота: {e}")
+        raise
+
 
 
 if __name__ == '__main__':

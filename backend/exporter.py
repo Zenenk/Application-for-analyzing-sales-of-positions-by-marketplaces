@@ -8,8 +8,10 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.rl_config import defaultPageSize
 from backend.database import get_product_history
+import matplotlib.pyplot as plt
+from io import BytesIO
+
 
 # Папки для отчётов
 CSV_RESULTS = "csv_results"
@@ -31,7 +33,7 @@ def export_to_csv(products, path=None):
     filename = path or os.path.join(CSV_RESULTS, f"report_{timestamp}.csv")
 
     fieldnames = [
-        "name", "article", "price", "quantity",
+        "name", "article", "price", "quantity", "image_url",
         "price_old", "price_new", "discount", "promo_labels",
         "promotion_detected", "detected_keywords", "parsed_at"
     ]
@@ -39,19 +41,21 @@ def export_to_csv(products, path=None):
     with open(filename, mode="w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
+        labels = p.get("promo_labels") or []
         for p in products:
             writer.writerow({
                 "name": p.get("name", ""),
                 "article": p.get("article", ""),
                 "price": p.get("price", ""),
                 "quantity": p.get("quantity", ""),
+                "image_url": p.get("image_url",""),
                 "price_old": p.get("price_old", ""),
                 "price_new": p.get("price_new", ""),
                 "discount": p.get("discount", ""),
-                "promo_labels": ";".join(p.get("promo_labels", [])),
+                "promo_labels": ";".join(labels),
                 "promotion_detected": p.get("promotion_analysis", {}).get("promotion_detected", False),
                 "detected_keywords": ";".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
-                "parsed_at": p.get("promotion_analysis", {}).get("parsed_at", datetime.now().isoformat())
+                "parsed_at": p.get("parsed_at", datetime.now().isoformat())
             })
     return filename
 
@@ -89,7 +93,7 @@ def export_to_pdf(products, path=None):
             ", ".join(p.get("promo_labels", [])),
             str(p.get("promotion_analysis", {}).get("promotion_detected", False)),
             ", ".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
-            p.get("promotion_analysis", {}).get("parsed_at", datetime.now().isoformat())
+            p.get("parsed_at", datetime.now().isoformat())
         ]
         data.append(row)
 

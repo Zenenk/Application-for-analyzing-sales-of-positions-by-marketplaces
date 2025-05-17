@@ -186,7 +186,7 @@ class MarketplaceScraper:
             page.close()
         return result
 
-    def _scrape_ozon_category(self, query: str):
+    def _scrape_ozon_category(self, query: str, limit: int):
         """Скрапинг категории Ozon с имитацией"""
         page = self._context.new_page()
         products = []
@@ -195,7 +195,8 @@ class MarketplaceScraper:
             page.goto(search_url, timeout=120000)
             page.wait_for_load_state("networkidle", timeout=60000)
             self._human_scroll(page)
-            count = min(page.locator("div[data-index]").count(), 50)
+            cards = page.locator("div[data-index]")
+            count = min(cards.count(), limit)
             for i in range(count):
                 card = page.locator("div[data-index]").nth(i)
                 href = card.locator("a").get_attribute("href")
@@ -209,7 +210,7 @@ class MarketplaceScraper:
             page.close()
         return products
 
-    def _scrape_wb_category(self, query: str):
+    def _scrape_wb_category(self, query: str, limit: int):
         """Скрапинг категории Wildberries с имитацией"""
         page = self._context.new_page()
         products = []
@@ -218,7 +219,8 @@ class MarketplaceScraper:
             page.goto(search_url, timeout=120000)
             page.wait_for_load_state("networkidle", timeout=60000)
             self._human_scroll(page)
-            count = min(page.locator("article.product-card").count(), 50)
+            cards = page.locator("article.product-card")
+            count = min(cards.count(), limit)
             for i in range(count):
                 card = page.locator("article.product-card").nth(i)
                 href = card.locator("a").get_attribute("href")
@@ -242,10 +244,10 @@ def scrape_marketplace(url, category_filter=None, article_filter=None, limit=10)
         if "/search" in url:
             if "ozon.ru" in url:
                 query = url.split("?")[1].split("=")[1]
-                products = mp._scrape_ozon_category(query)
+                products = mp._scrape_ozon_category(query, limit)
             else:
                 query = url.split("=")[1]
-                products = mp._scrape_wb_category(query)
+                products = mp._scrape_wb_category(query, limit)
         else:
             marketplace = "ozon" if "ozon.ru" in url else "wildberries"
             products = [mp.scrape_product(marketplace, url)]
