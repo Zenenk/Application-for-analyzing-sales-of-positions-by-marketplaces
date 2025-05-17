@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { getProducts } from '../services/api';  // теперь корректно импортируется
+import API from '../services/api';
 
 export const ProductsContext = createContext();
 
@@ -10,10 +10,11 @@ function ProductsProvider({ children }) {
   const [error, setError]             = useState(null);
   const [lastRunTime, setLastRunTime] = useState(null);
 
+  // Функция получения списка продуктов
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const data = await getProducts();   // возвращает уже res.data
+      const data = await API.getProductList();
       setProducts(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {

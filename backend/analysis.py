@@ -1,46 +1,55 @@
+# backend/analysis.py
 
-"""
-Модуль анализа данных о продуктах
-"""
+import re
 from loguru import logger
 
-def compare_product_data(old_data, new_data):
+def compare_product_data(old_data: dict, new_data: dict) -> dict:
     """
     Сравнивает старые и новые данные о продукте.
 
     Аргументы:
-      - old_data: словарь с предыдущими данными товара (ключи: price, quantity, image_url).
-      - new_data: словарь с новыми данными товара.
+      - old_data: {'price': str, 'quantity': str, 'image_url': str}
+      - new_data: {'price': str, 'quantity': str, 'image_url': str}
 
-    Возвращает словарь с изменениями:
-      - price_change: разница в цене (число) или None, если вычислить не удалось.
-      - quantity_change: разница в остатке на складе (целое) или None.
-      - image_changed: True, если ссылка на изображение изменилась, иначе False.
+    Возвращает:
+      {
+        'price_change': float | None,
+        'quantity_change': int   | None,
+        'image_changed':  bool
+      }
     """
     result = {}
+
+    # 1) Разбор цены, учитывая десятичный разделитель и пробелы
     try:
-        # Извлекаем числовое значение из строки цены (игнорируя валюту и пробелы)
-        old_price = float(''.join(filter(str.isdigit, old_data.get("price", "") or "0")))
-        new_price = float(''.join(filter(str.isdigit, new_data.get("price", "") or "0")))
+        def parse_price(s: str) -> float:
+            # Оставляем цифры, точки и запятые
+            num = re.sub(r"[^\d.,]", "", s or "")
+            # Заменяем запятую на точку и приводим к float
+            return float(num.replace(",", "."))
+        old_price = parse_price(old_data.get("price", "0"))
+        new_price = parse_price(new_data.get("price", "0"))
         result["price_change"] = new_price - old_price
     except Exception as e:
         logger.warning(f"Не удалось вычислить изменение цены: {e}")
         result["price_change"] = None
 
+    # 2) Разбор остатков — целые числа
     try:
-        # Извлекаем числовое значение из остатка
-        old_quantity = int(''.join(filter(str.isdigit, old_data.get("quantity", "") or "0")))
-        new_quantity = int(''.join(filter(str.isdigit, new_data.get("quantity", "") or "0")))
-        result["quantity_change"] = new_quantity - old_quantity
+        old_qty = int(re.sub(r"[^\d]", "", old_data.get("quantity", "") or "0"))
+        new_qty = int(re.sub(r"[^\d]", "", new_data.get("quantity", "") or "0"))
+        result["quantity_change"] = new_qty - old_qty
     except Exception as e:
         logger.warning(f"Не удалось вычислить изменение остатка: {e}")
         result["quantity_change"] = None
 
-    # Проверяем изменение изображения (сравниваем URL)
-    result["image_changed"] = (old_data.get("image_url") != new_data.get("image_url"))
+    # 3) Проверка смены URL-а картинки
+    result["image_changed"] = old_data.get("image_url") != new_data.get("image_url")
+
     return result
 
+
 if __name__ == "__main__":
-    old = {"price": "100 руб.", "quantity": "20", "image_url": "http://example.com/image1.jpg"}
-    new = {"price": "110 руб.", "quantity": "18", "image_url": "http://example.com/image2.jpg"}
+    old = {"price": "1 100.50 ₽", "quantity": "20", "image_url": "http://ex.com/1.jpg"}
+    new = {"price": "1 200,75 ₽", "quantity": "18", "image_url": "http://ex.com/2.jpg"}
     print(compare_product_data(old, new))

@@ -3,7 +3,6 @@ import React, { useEffect, useState, useMemo } from 'react';
 import API from '../services/api';
 import ProductCard from '../components/ProductCard';
 import { sortByHierarchy } from '../utils/sortProducts';
-import { sortByHierarchy } from '../utils/sortProducts';
 
 function ProductList() {
   const [products, setProducts] = useState(null);

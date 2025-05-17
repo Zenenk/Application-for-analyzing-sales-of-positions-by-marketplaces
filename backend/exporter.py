@@ -21,7 +21,10 @@ os.makedirs(CSV_RESULTS, exist_ok=True)
 os.makedirs(PDF_RESULTS, exist_ok=True)
 
 # Регистрация шрифта для кириллицы
-pdfmetrics.registerFont(TTFont('DejaVuSans', 'DejaVuSans.ttf'))
+DEJAVU_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+if not os.path.isfile(DEJAVU_PATH):
+    raise RuntimeError(f"Не найден шрифт DejaVuSans по пути {DEJAVU_PATH}")
+pdfmetrics.registerFont(TTFont('DejaVuSans', DEJAVU_PATH))
 
 
 def export_to_csv(products, path=None):

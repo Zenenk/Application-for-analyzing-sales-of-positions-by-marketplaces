@@ -72,3 +72,9 @@ def start_scheduler():
     t = threading.Thread(target=run_loop, daemon=True)
     t.start()
     logger.info("Служба планировщика запущена.")
+
+def update_schedule_interval(new_interval: int):
+    SCRAPE_CONFIG["interval"] = new_interval
+    schedule.clear("scrape_job")
+    schedule.every(new_interval).days.do(job_scrape_and_save).tag("scrape_job")
+    logger.info(f"Интервал обновлён: каждые {new_interval} дней")

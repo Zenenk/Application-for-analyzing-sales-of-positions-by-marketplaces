@@ -389,11 +389,15 @@ def import_screenshot_route():
     
 @app.route("/schedule", methods=["POST"])
 def set_schedule():
-    data = request.get_json()
-    interval = int(data.get("interval", 1))
+    interval = int(request.json.get("interval", 1))
     from backend.schedule_manager import update_schedule_interval
     update_schedule_interval(interval)
     return jsonify({"interval": interval})
+
+if __name__ == "__main__":
+    from backend.schedule_manager import start_scheduler
+    start_scheduler()
+    app.run(host="0.0.0.0", port=5000, debug=True)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 import os
 import pytest
-from backend.schedule import run_scheduled_analysis
+from backend.schedule_tasks import run_scheduled_analysis
 
 def test_run_no_urls(tmp_path, monkeypatch):
     # конфига с пустыми urls

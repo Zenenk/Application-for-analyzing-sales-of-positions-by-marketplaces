@@ -1,27 +1,29 @@
-# --- Стадия сборки фронтенда ---
+# frontend/Dockerfile
+# syntax=docker/dockerfile:1.4
+
 FROM node:18-alpine AS build
 
-# Рабочая директория
 WORKDIR /app
-RUN mkdir -p /app/pdf_results /app/csv_results
 
-# Копируем только манифесты и настройки npm
-COPY package.json package-lock.json ./
-# Копируем правила npm (таймауты и отключение строгой проверки потоков)
-COPY .npmrc ./
+# 1) Скопировать package-файлы для кэширования зависимостей
+COPY package.json package-lock.json .npmrc ./
 
-# Устанавливаем зависимости (взятие из .npmrc)
-RUN npm install
+# 2) Настройка npm для устойчивости к сбоям и установка зависимостей
+RUN --mount=type=cache,target=/root/.npm \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-factor 2 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 60000 && \
+    npm config set registry https://registry.npmjs.org/ && \
+    npm ci --prefer-offline --no-audit --progress=false
 
-# Копируем весь код (исключая node_modules благодаря .dockerignore)
-COPY . .
-
-# Собираем в production
+# 3) Скопировать весь исходный код и собрать
+COPY . ./
 RUN npm run build
 
-# --- Стадия отдачи через nginx ---
+# Далее — nginx для раздачи
 FROM nginx:1.21-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+RUN rm -rf /usr/share/nginx/html/*
 COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

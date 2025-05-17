@@ -1,4 +1,3 @@
-# backend/config_parser.py
 import os
 import configparser
 
@@ -26,17 +25,26 @@ def read_config(path: str) -> dict:
 
     # --- MARKETPLACES ---
     mp_section = "MARKETPLACES"
-    mp_list = (
-        cp.get(mp_section, "marketplaces", fallback="")
-        .split(",")
-    )
+    mp_list = cp.get(mp_section, "marketplaces", fallback="").split(",")
     marketplaces = [m.strip() for m in mp_list if m.strip()]
 
     # --- SEARCH ---
     search_section = "SEARCH"
-    urls = [u.strip() for u in cp.get(search_section, "urls", "").split(",") if u.strip()]
-    categories = [c.strip() for c in cp.get(search_section, "categories", "").split(",") if c.strip()]
-    articles   = [a.strip() for a in cp.get(search_section, "articles",   "").split(",") if a.strip()]
+    urls = [
+        u.strip()
+        for u in cp.get(search_section, "urls", fallback="").split(",")
+        if u.strip()
+    ]
+    categories = [
+        c.strip()
+        for c in cp.get(search_section, "categories", fallback="").split(",")
+        if c.strip()
+    ]
+    articles = [
+        a.strip()
+        for a in cp.get(search_section, "articles", fallback="").split(",")
+        if a.strip()
+    ]
 
     # --- EXPORT ---
     export_section = "EXPORT"
@@ -59,7 +67,7 @@ DEFAULT_CONFIG_PATH = os.getenv(
 
 _config = read_config(DEFAULT_CONFIG_PATH)
 
-SCRAPER      = _config["SCRAPER"]
+SCRAPER = _config["SCRAPER"]
 MARKETPLACES = _config["MARKETPLACES"]["marketplaces"]
-SEARCH       = _config["SEARCH"]
-EXPORT       = _config["EXPORT"]
+SEARCH = _config["SEARCH"]
+EXPORT = _config["EXPORT"]
