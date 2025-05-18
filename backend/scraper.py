@@ -7,7 +7,6 @@ from urllib.parse import urljoin
 from backend.utils.marketplace_urls import build_search_url, build_product_url
 import requests
 import urllib.parse
-from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 # Вспомогательная JS-функция для encodeURIComponent
@@ -266,145 +265,94 @@ class MarketplaceScraper:
 
 
     def _scrape_ozon_category_by_url(self, url: str, limit: int):
-    logger.info(f"[OZON-CAT] Scraping category URL: {url}")
-    products: list[dict] = []
-
-    # 1) Запускаем отдельный headful-контекст с «stealth»-скриптом
-    pw2 = sync_playwright().start()
-    browser2 = pw2.chromium.launch(
-        headless=False,
-        slow_mo=100,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-        ]
-    )
-    context2 = browser2.new_context(
-        viewport={"width": 1920, "height": 1080},
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/114.0.0.0 Safari/537.36"
-        ),
-        locale="ru-RU",
-        timezone_id="Europe/Moscow",
-        java_script_enabled=True,
-        bypass_csp=True,
-        extra_http_headers={"Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"},
-    )
-    # «Stealth»-инициализация перед загрузкой любой страницы
-    context2.add_init_script(
         """
-        () => {
-          Object.defineProperty(navigator, 'webdriver', { get: () => false });
-          window.chrome = { runtime: {} };
-          Object.defineProperty(navigator, 'languages', { get: () => ['ru-RU', 'ru'] });
-          Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-        }
+        Скрапинг категории Ozon по готовому URL через встроенный JSON-API в контексте
+        браузера (чтобы автоматически передать все антибот-куки и заголовки).
         """
-    )
+        logger.info(f"[OZON-CAT] {url} ⏳")
+        page = self._context.new_page()
+        products = []
+        try:
+            # анти-ботовая подготовка
+            self._human_mouse_move(page)
+            page.keyboard.press(random.choice(["Tab", "ArrowDown", "ArrowUp"]))
+            self._human_delay(0.5, 1.5)
 
-    page = context2.new_page()
-    try:
-        # анти-бот: лёгкие движения мышью и клавиатурой
-        self._human_mouse_move(page)
-        page.keyboard.press(random.choice(["Tab", "ArrowDown", "ArrowUp"]))
-        self._human_delay(0.5, 1.5)
-        page.wait_for_timeout(3000)
+            # заходим на категорию, чтобы получить нужные куки и заголовки
+            page.goto(url, timeout=30000)
+            page.wait_for_load_state("networkidle", timeout=15000)
+            self._human_scroll(page)
 
-        # заходим на категорию
-        response = page.goto(url, timeout=60000)
-        logger.info(f"Ozon category returned status {response.status}")
-        page.wait_for_load_state("networkidle", timeout=30000)
-        self._human_scroll(page)
+            # вытягиваем чистый путь без параметров
+            category_path = url.split("?", 1)[0]
 
-        # находим карточки
-        cards = page.locator("div.tile-root[data-index]")
-        total = min(cards.count(), limit)
-        logger.info(f"[OZON-CAT] found {total} cards")
-        for i in range(total):
-            card = cards.nth(i)
+            # вызываем composer-API прямо из браузера (там же уже лежат куки и UA)
+            api_url = (
+                "/api/composer-api.bx/page/json/v2"
+                f"?url={encodeURIComponent(category_path)}"
+                "&_withText=true"
+                "&_binds=[\"searchResultsV2\"]"
+            )
+            # выполняем fetch внутри страницы
+            payload = page.evaluate(
+                """async (api) => {
+                    const resp = await fetch(api, {
+                        credentials: 'include',
+                        headers: {
+                            'Accept': 'application/json, text/plain, */*',
+                            'Accept-Language': 'ru-RU,ru;q=0.9'
+                        }
+                    });
+                    return await resp.json();
+                }""",
+                api_url
+            )
 
-            # ссылка и артикул
-            href = card.locator("a.q4b012-a.tile-clickable-element").get_attribute("href") or ""
-            full_url = urljoin("https://www.ozon.ru", href)
-            m = re.search(r"-(\d+)/", href)
-            article = m.group(1) if m else None
+            # парсим ответ
+            items = (
+                payload
+                .get("widgetStates", {})
+                .get("searchResultsV2", {})
+                .get("data", {})
+                .get("items", [])
+            )
 
-            # изображение
-            img = card.locator("div.sj8_25.j9s_25 img").get_attribute("src") or None
+            for ent in items[:limit]:
+                e = ent.get("entity", {})
+                link      = e.get("link", "")
+                article   = str(e.get("id")) or None
+                name      = e.get("title")
+                images    = e.get("images", [])
+                img_url   = images[0].get("url") if images else None
+                price_obj = e.get("price", {})
+                new_p     = price_obj.get("value")
+                old_p     = price_obj.get("oldValue")
+                disc      = price_obj.get("discount")
+                stock_obj = e.get("stock", {}).get("items", [])
+                qty       = stock_obj[0].get("count") if stock_obj else None
+                badges    = e.get("badges", [])
+                promo_lbl = [b.get("text") for b in badges if b.get("text")]
 
-            # название
-            title_elem = card.locator("a.j5s_25 span.tsBody500Medium")
-            name = title_elem.text_content().strip() if title_elem else None
+                products.append({
+                    "url":           f"https://www.ozon.ru{link}",
+                    "name":          name,
+                    "article":       article,
+                    "price":         new_p,
+                    "quantity":      qty,
+                    "image_url":     img_url,
+                    "price_new":     new_p,
+                    "price_old":     old_p,
+                    "discount":      f"{disc}%" if disc is not None else None,
+                    "promo_labels":  promo_lbl
+                })
 
-            # остатки (не всегда есть)
-            qty = None
-            try:
-                qty = card.locator("div.p6b22-a1.tsBodyControl400Small span").text_content().strip()
-            except Exception:
-                pass
+        except Exception:
+            logger.exception(f"Error scraping OZON category {url}")
+        finally:
+            page.close()
 
-            # цены
-            new_price = None
-            old_price = None
-            discount = None
-            try:
-                new_price = card.locator("div.c3100-a0 span.tsHeadline500Medium").text_content().strip()
-            except Exception:
-                pass
-            try:
-                old_price = card.locator("div.c3100-a0 span.tsBodyControl400Small").text_content().strip()
-            except Exception:
-                pass
-            try:
-                discount = card.locator("div.c3100-a0 span.tsBodyControl400Small.c3100-b4").text_content().strip()
-            except Exception:
-                pass
-
-            # промо-лейблы
-            promo_labels = []
-            try:
-                promo = card.locator("section.q1b017-a div.b100-b0.tsBodyControl400Small").all_text_contents()
-                promo_labels = [t.strip() for t in promo if t.strip()]
-            except Exception:
-                pass
-
-            # парсим число из новой цены для поля price
-            price_val = None
-            if new_price:
-                try:
-                    price_val = float(re.sub(r"[^\d,\.]", "", new_price).replace(",", "."))
-                except Exception:
-                    pass
-
-            products.append({
-                "url":        full_url,
-                "name":       name,
-                "article":    article,
-                "price":      price_val,
-                "quantity":   qty,
-                "image_url":  img,
-                "price_new":  new_price,
-                "price_old":  old_price,
-                "discount":   discount,
-                "promo_labels": promo_labels,
-            })
-
-            # пауза между карточками
-            time.sleep(random.uniform(5, 30))
-
-    except Exception:
-        logger.exception(f"Error scraping OZON category {url}")
-    finally:
-        page.close()
-        context2.close()
-        browser2.close()
-        pw2.stop()
-
-    return products
-
+        logger.info(f"[OZON-CAT] extracted {len(products)} items")
+        return products
 
 
 
