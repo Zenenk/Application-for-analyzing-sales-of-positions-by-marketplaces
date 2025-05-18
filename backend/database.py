@@ -1,34 +1,41 @@
-# backend/database.py
-
-
+import os
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, asc
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 from backend.models import Base, Product
-import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Получение URL базы данных из переменных окружения
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("Environment variable DATABASE_URL must be set")
 
+# Создание SQLAlchemy Engine для PostgreSQL
+engine = create_engine(DATABASE_URL)
+
+# Фабрика сессий
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+# Инициализация базы данных: создание таблиц
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+# Добавление нового продукта в базу данных
+# product_data должен содержать ключи:
+# name, article, price, quantity, image_url,
+# promotion_detected, detected_keywords,
+# price_old, price_new, discount, promo_labels,
+# parsed_at (строка ISO или datetime)
 def add_product(product_data: dict) -> Product:
-    """
-    product_data должен содержать ключи:
-    name, article, price, quantity, image_url,
-    promotion_detected, detected_keywords,
-    price_old, price_new, discount, promo_labels,
-    parsed_at (строка ISO или datetime)
-    """
     session = SessionLocal()
     try:
         # Обработка parsed_at
         parsed_at = None
-        if "parsed_at" in product_data and product_data["parsed_at"]:
-            from datetime import datetime
+        if product_data.get("parsed_at"):
             val = product_data["parsed_at"]
             parsed_at = (
                 val if isinstance(val, datetime)
@@ -38,18 +45,17 @@ def add_product(product_data: dict) -> Product:
         prod = Product(
             name=product_data.get("name", ""),
             article=product_data.get("article", ""),
-            price=product_data.get("price", ""),
-            quantity=product_data.get("quantity", ""),
-            image_url=product_data.get("image_url", None),
+            price=product_data.get("price", 0),
+            quantity=product_data.get("quantity", 0),
+            image_url=product_data.get("image_url"),
 
             promotion_detected=product_data.get("promotion_detected", False),
             detected_keywords=product_data.get("detected_keywords", ""),
 
-            # === Новые поля ===
-            price_old=product_data.get("price_old", None),
-            price_new=product_data.get("price_new", None),
-            discount=product_data.get("discount", None),
-            promo_labels=product_data.get("promo_labels", None),
+            price_old=product_data.get("price_old"),
+            price_new=product_data.get("price_new"),
+            discount=product_data.get("discount"),
+            promo_labels=product_data.get("promo_labels"),
 
             parsed_at=parsed_at
         )
@@ -63,6 +69,7 @@ def add_product(product_data: dict) -> Product:
     finally:
         session.close()
 
+# Получение всех продуктов из базы данных
 def get_products():
     session = SessionLocal()
     try:
@@ -70,11 +77,9 @@ def get_products():
     finally:
         session.close()
 
+# Получение истории продукта по артикулу
+# Возвращает список словарей, отсортированных по parsed_at по возрастанию
 def get_product_history(article: str):
-    """
-    Возвращает список словарей с историей по артикулу,
-    отсортированных по parsed_at по возрастанию.
-    """
     session = SessionLocal()
     try:
         rows = (
@@ -97,12 +102,10 @@ def get_product_history(article: str):
     finally:
         session.close()
 
+# Удаление старых данных из базы
+# Удаляет записи старше, чем сейчас минус days дней
+# Возвращает количество удаленных записей
 def clean_old_data(days: int = 60) -> int:
-    """
-    Удаляет все записи из таблицы products,
-    у которых timestamp ранее, чем сейчас минус days.
-    Возвращает число удалённых записей.
-    """
     cutoff = datetime.utcnow() - timedelta(days=days)
     session = SessionLocal()
     try:

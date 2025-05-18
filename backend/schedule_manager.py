@@ -27,23 +27,23 @@ def job_scrape_and_save():
         f"https://www.ozon.ru/search/?text={SCRAPE_CONFIG['query']}"
         if SCRAPE_CONFIG["type"] == "category"
         else SCRAPE_CONFIG["query"],
-        category_filter=[SCRAPE_CONFIG["query"]] if SCRAPE_CONFIG["type"]=="category" else None,
-        article_filter=[SCRAPE_CONFIG["query"]]  if SCRAPE_CONFIG["type"]=="product"  else None,
+        category_filter=[SCRAPE_CONFIG["query"]] if SCRAPE_CONFIG["type"] == "category" else None,
+        article_filter=[SCRAPE_CONFIG["query"]]   if SCRAPE_CONFIG["type"] == "product"  else None,
         limit=SCRAPE_CONFIG["limit"]
     )
     for p in prods:
         product_data = {
-            "name": p.get("name",""),
-            "article": p.get("article",""),
-            "price": str(p.get("price","")),
-            "quantity": str(p.get("quantity","")),
-            "image_url": p.get("image_url",""),
-            "promotion_detected": p.get("promotion_analysis",{}).get("promotion_detected",False),
-            "detected_keywords": ";".join(p.get("promotion_analysis",{}).get("detected_keywords",[])),
-            "price_old": p.get("price_old",""),
-            "price_new": p.get("price_new",""),
-            "discount": p.get("discount",""),
-            "promo_labels": ";".join(p.get("promo_labels",[])),
+            "name": p.get("name", ""),
+            "article": p.get("article", ""),
+            "price": str(p.get("price", "")),
+            "quantity": str(p.get("quantity", "")),
+            "image_url": p.get("image_url", ""),
+            "promotion_detected": p.get("promotion_analysis", {}).get("promotion_detected", False),
+            "detected_keywords": ";".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
+            "price_old": p.get("price_old", ""),
+            "price_new": p.get("price_new", ""),
+            "discount": p.get("discount", ""),
+            "promo_labels": ";".join(p.get("promo_labels", [])),
         }
         add_product(product_data)
     logger.info("Запланированный скрапинг завершён.")
@@ -53,16 +53,16 @@ def job_cleanup():
     Задача: удаляет записи старше 60 дней.
     """
     deleted = clean_old_data(60)
-    logger.info(f"Очистка БД: удалено записей старее 60 дней: {deleted}")
+    logger.info(f"Очистка БД: удалено записей старше 60 дней: {deleted}")
 
 def start_scheduler():
     """
     Регистрирует задачи и запускает цикл schedule в фоновом потоке.
     """
-    # Scraping every X days
-    schedule.every(SCRAPE_CONFIG["interval"]).days.do(job_scrape_and_save)
-    # Cleanup daily
-    schedule.every().day.at("03:00").do(job_cleanup)
+    # Инициализация задачи скрапинга с тегом для возможности обновления
+    schedule.every(SCRAPE_CONFIG["interval"]).days.do(job_scrape_and_save).tag("scrape_job")
+    # Ежедневная очистка в 03:00 UTC
+    schedule.every().day.at("03:00").do(job_cleanup).tag("cleanup_job")
 
     def run_loop():
         while True:
@@ -74,7 +74,12 @@ def start_scheduler():
     logger.info("Служба планировщика запущена.")
 
 def update_schedule_interval(new_interval: int):
+    """
+    Обновляет интервал выполнения задачи скрапинга.
+    """
     SCRAPE_CONFIG["interval"] = new_interval
+    # Удаление предыдущей задачи скрапинга по тегу
     schedule.clear("scrape_job")
+    # Регистрация заново с новым интервалом
     schedule.every(new_interval).days.do(job_scrape_and_save).tag("scrape_job")
     logger.info(f"Интервал обновлён: каждые {new_interval} дней")

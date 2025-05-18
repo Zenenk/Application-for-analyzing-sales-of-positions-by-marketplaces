@@ -7,7 +7,7 @@ function Dashboard() {
 
   useEffect(() => {
     // Получаем данные для дашборда при монтировании компонента
-    API.getDashboardData()
+    API.getDashboard()
       .then((dashboardData) => {
         setData(dashboardData);
       })

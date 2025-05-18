@@ -1,4 +1,8 @@
 # syntax=docker/dockerfile:1.4
+
+###################################
+# Стадия 1: builder
+###################################
 FROM python:3.10-slim AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -9,7 +13,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
-# Системные библиотеки для сборки C-расширений (pycairo, Pillow и т.п.)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
@@ -25,20 +28,31 @@ RUN apt-get update \
        libsm6 \
        libxrender1 \
        libxext6 \
+       tesseract-ocr \
+       libtesseract-dev \
+       libdbus-1-3 \
+       libatk1.0-0 \
+       libatk-bridge2.0-0 \
+       libatspi2.0-0 \
+       libxcomposite1 \
+       libxdamage1 \
+       libxrandr2 \
+       libgbm1 \
+       libxkbcommon0 \
+       libasound2 \
+       libcups2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем и устанавливаем Python-зависимости
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir playwright easyocr
 
-# Устанавливаем браузер Chromium для Playwright
 RUN playwright install chromium
 
 ###################################
-# Финальный лёгкий образ
+# Стадия 2: финальный лёгкий образ
 ###################################
 FROM python:3.10-slim
 
@@ -48,19 +62,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
+# Устанавливаем все зависимости для Playwright
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        fonts-dejavu-core \
+       curl \
+       libcups2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем интерпретаторные и системные библиотеки из builder
+# Копируем библиотеки и браузеры из builder
 COPY --from=builder /usr/lib /usr/lib
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=builder /ms-playwright /ms-playwright
 
-# Копируем сам код бэкенда
+# Копируем код
 COPY . /app/backend
-
 ENV PYTHONPATH=/app/backend
 
 EXPOSE 5000

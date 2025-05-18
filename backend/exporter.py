@@ -1,4 +1,3 @@
-# backend/exporter.py
 import os
 import csv
 from datetime import datetime
@@ -11,7 +10,6 @@ from reportlab.pdfbase.ttfonts import TTFont
 from backend.database import get_product_history
 import matplotlib.pyplot as plt
 from io import BytesIO
-
 
 # Папки для отчётов
 CSV_RESULTS = "csv_results"
@@ -44,20 +42,22 @@ def export_to_csv(products, path=None):
     with open(filename, mode="w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        labels = p.get("promo_labels") or []
         for p in products:
+            labels = p.get("promo_labels") or []
             writer.writerow({
                 "name": p.get("name", ""),
                 "article": p.get("article", ""),
                 "price": p.get("price", ""),
                 "quantity": p.get("quantity", ""),
-                "image_url": p.get("image_url",""),
+                "image_url": p.get("image_url", ""),
                 "price_old": p.get("price_old", ""),
                 "price_new": p.get("price_new", ""),
                 "discount": p.get("discount", ""),
                 "promo_labels": ";".join(labels),
                 "promotion_detected": p.get("promotion_analysis", {}).get("promotion_detected", False),
-                "detected_keywords": ";".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
+                "detected_keywords": ";".join(
+                    p.get("promotion_analysis", {}).get("detected_keywords", [])
+                ),
                 "parsed_at": p.get("parsed_at", datetime.now().isoformat())
             })
     return filename
@@ -85,6 +85,8 @@ def export_to_pdf(products, path=None):
 
     # Данные
     for p in products:
+        promo_labels = p.get("promo_labels") or []
+        keywords = p.get("promotion_analysis", {}).get("detected_keywords", [])
         row = [
             Paragraph(str(p.get("name", "")), styles['Normal']),
             str(p.get("article", "")),
@@ -93,9 +95,9 @@ def export_to_pdf(products, path=None):
             str(p.get("price_old", "")),
             str(p.get("price_new", "")),
             str(p.get("discount", "")),
-            ", ".join(p.get("promo_labels", [])),
+            ", ".join(promo_labels),
             str(p.get("promotion_analysis", {}).get("promotion_detected", False)),
-            ", ".join(p.get("promotion_analysis", {}).get("detected_keywords", [])),
+            ", ".join(keywords),
             p.get("parsed_at", datetime.now().isoformat())
         ]
         data.append(row)
@@ -112,21 +114,22 @@ def export_to_pdf(products, path=None):
     doc.build(elements)
     return filename
 
+
 def export_product_pdf(article: str, path: str = None) -> str:
     """
     Формирует PDF-отчёт с графиками по одному товару.
     Возвращает путь к сгенерированному файлу.
     """
-    # 1. Получаем историю
+    # Получаем историю
     history = get_product_history(article)
     if not history:
         raise FileNotFoundError(f"No history for article {article}")
 
-    # 2. Подготавливаем имя файла
+    # Подготавливаем имя файла
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = path or os.path.join(PDF_RESULTS, f"{article}_{ts}.pdf")
 
-    # 3. Создаём PDF
+    # Создаём PDF
     doc = SimpleDocTemplate(filename, pagesize=letter)
     styles = getSampleStyleSheet()
     styles["Normal"].fontName = "DejaVuSans"
@@ -135,42 +138,40 @@ def export_product_pdf(article: str, path: str = None) -> str:
     elements.append(Paragraph(f"Отчёт по товару: {article}", styles["Title"]))
     elements.append(Spacer(1, 12))
 
-    # 4. По каждому параметру строим график и вставляем в PDF
+    # Строим графики по ключам
     for key, title in [
         ("price", "Динамика цены"),
         ("discount", "Динамика скидки"),
         ("quantity", "Динамика остатков")
     ]:
-        # 4.1 Подготовка данных
+        # Подготовка данных
         dates = [h["parsed_at"] for h in history]
         values = []
         for h in history:
-            v = h.get(key)
             try:
-                # убираем лишние символы, конвертируем
-                val = float(str(v).replace("%", "").replace(",", "."))
+                val = float(str(h.get(key)).replace("%", "").replace(",", "."))
             except Exception:
                 val = 0.0
             values.append(val)
 
-        # 4.2 Строим график matplotlib
+        # Строим график
         fig, ax = plt.subplots(figsize=(6, 2.5))
         ax.plot(dates, values, marker="o")
         ax.set_title(title, fontname="DejaVuSans")
         ax.tick_params(axis='x', labelrotation=45)
         plt.tight_layout()
 
-        # 4.3 Сохраняем график во временный буфер
+        # Сохраняем в буфер
         img_buffer = BytesIO()
         fig.savefig(img_buffer, format="PNG")
         plt.close(fig)
         img_buffer.seek(0)
 
-        # 4.4 Вставляем в PDF
+        # Вставляем в PDF
         elements.append(Paragraph(title, styles["Heading2"]))
         elements.append(Image(img_buffer, width=400, height=150))
         elements.append(Spacer(1, 12))
 
-    # 5. Генерируем и возвращаем путь
+    # Генерируем PDF
     doc.build(elements)
     return filename

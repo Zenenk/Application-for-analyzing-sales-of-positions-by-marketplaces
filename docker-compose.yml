@@ -1,4 +1,4 @@
-version: "3.8"
+# docker-compose.yml
 services:
   # ------------ Backend (Flask) ------------
   backend:
@@ -11,18 +11,16 @@ services:
       - ./backend/.env
     environment:
       - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/postgres
-      # (при желании можно задать CONFIG_PATH=/app/backend/config/config.conf)
     ports:
       - "5001:5000"
     depends_on:
-      - db
+      db:
+        condition: service_started
     networks:
       - app-network
     volumes:
       # Чтобы config_parser читал ваш config.conf
       - ./backend/config:/app/backend/config:ro
-      # Шрифт для PDF (если лежит в backend/)
-      - ./backend/DejaVuSans.ttf:/app/backend/DejaVuSans.ttf:ro
       # Куда экспортить файлы
       - ./pdf_results:/app/pdf_results
       - ./csv_results:/app/csv_results
@@ -37,11 +35,14 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
-    volumes:
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      db:
+        condition: service_started
+      backend:
+        condition: service_started
     networks:
       - app-network
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
   # ------------ База данных PostgreSQL ------------
   db:
