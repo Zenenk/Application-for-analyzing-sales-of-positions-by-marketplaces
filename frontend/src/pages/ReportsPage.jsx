@@ -6,7 +6,7 @@ function ReportsPage() {
   const [error, setError]     = useState(null);
 
   useEffect(() => {
-    API.getReportsData()
+    API.getReports()
       .then(setReports)
       .catch(err => {
         console.error('Error fetching reports data:', err);

@@ -383,8 +383,8 @@ class MarketplaceScraper:
             
             for i in range(total):
                 card = cards.nth(i)
-                # ссылка на товар
-                href = card.locator("a.j-card-link").get_attribute("href") or ""
+                # 1) Ссылка и артикул
+                href = card.locator("a.product-card__link").get_attribute("href") or ""
                 # вытаскиваем артикул из URL
                 m = re.search(r"/catalog/(\d+)/", href)
                 article = m.group(1) if m else None
@@ -396,37 +396,68 @@ class MarketplaceScraper:
                 brand = card.locator("span.product-card__brand").text_content().strip() or ''
                 name_part = card.locator("span.product-card__name").text_content().strip() or ''
                 title = f"{brand} {name_part}".strip()
-                # цена в списке
-                price_text = card.locator("div.product-card__middle-wrap > div > span > ins").text_content()
-                price = None
+                # 4) Новая (текущая) цена из <ins>
+                new_price = None
                 try:
-                    price = float(re.sub(r"[^\d,\.]", "", price_text).replace(",", "."))
+                    price_text = card.locator("ins.price__lower-price").text_content().strip()
+                    # убираем нечисловые символы и конвертим в float
+                    new_price = float(
+                      re.sub(r"[^\d,\.]", "",
+                        price_text.replace("\u00A0", "")
+                      ).replace(",", ".")
+                    )
                 except Exception:
                     pass
 
+                # 5) Старая цена из <del>, если есть
+                old_price = None
+                if card.locator("del").count() > 0:
+                    try:
+                        old_text  = card.locator("del").text_content().strip()
+                        old_price = float(
+                          re.sub(r"[^\d,\.]", "",
+                            old_text.replace("\u00A0", "")
+                          ).replace(",", ".")
+                        )
+                    except Exception:
+                        pass
+
+                # 6) Процент скидки из <span class="percentage-sale">
+                discount = None
+                if card.locator("span.percentage-sale").count() > 0:
+                    discount = card.locator("span.percentage-sale").text_content().strip()
+                # 7) Промо-лейблы: любые теги .product-card__tip (sale, new, и т.д.)
+                promo_labels = card.locator("div.product-card__tips--bottom .product-card__tip").all_text_contents()
+                # убираем пустые строки
+                promo_labels = [t.strip() for t in promo_labels if t.strip()]
+
                 if article:
                     products.append({
-                        "url": href,        # уже полный URL
-                        "name": title,
-                        "article": article,
-                        "price": price,
-                        "quantity": "",     # WB в категории не показывает остатки
-                        "image_url": img,
-                        "price_new": None,
-                        "price_old": None,
-                        "discount": None,
-                        "promo_labels": []
+                        "url":         href,
+                        "name":        title,
+                        "article":     article,
+                        "price":       new_price,
+                        "quantity":    "",           # WB в категории не показывает остатки
+                        "image_url":   img,
+                        "price_new":   new_price,
+                        "price_old":   old_price,
+                        "discount":    discount,
+                        "promo_labels": promo_labels
                     })
                 else:
-                    logger.warning(f"[WB-CAT] не удалось найти артикул в карточке #{i}")
+                    logger.warning(f"[WB-CAT] не нашли артикул в карточке #{i}")
 
-                time.sleep(random.uniform(5,30))
+                time.sleep(random.uniform(5, 30))
 
         except Exception:
             logger.exception(f"Error scraping WB category {url}")
         finally:
             page.close()
         return products
+
+
+
+
 
 
 def scrape_marketplace(
@@ -446,11 +477,6 @@ def scrape_marketplace(
             mpn = "ozon" if "ozon.ru" in url else "wildberries"
             prods = [ mp.scrape_product(mpn, url) ]
 
-        if category_filter:
-            prods = [
-                p for p in prods
-                if any(cf.lower() in (p.get("name") or "").lower() for cf in category_filter)
-            ]
         if article_filter:
             prods = [ p for p in prods if p.get("article") in article_filter ]
 

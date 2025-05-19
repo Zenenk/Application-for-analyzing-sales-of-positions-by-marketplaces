@@ -39,5 +39,12 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5001"
+  "proxy": {
+    "/api": {
+      "target": "http://localhost:5001",
+      "pathRewrite": { "^/api": "" },
+      "secure": false,
+      "changeOrigin": true
+    }
+  }
 }
