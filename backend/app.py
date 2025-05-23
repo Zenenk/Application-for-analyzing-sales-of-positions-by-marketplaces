@@ -126,15 +126,9 @@ def build_search_urls(marketplace: str, query_type: str, query_value: str) -> li
     return urls
 
 
-
-# Создание Flask-приложения и настройка CORS
 app = Flask(__name__)
-allowed_origin = os.getenv("ALLOWED_ORIGIN")
-if allowed_origin:
-    CORS(app, origins=[allowed_origin])
-else:
-    CORS(app)
-
+# Разрешаем любые origin и все методы/заголовки
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 
 @app.route("/health", methods=["GET"])
