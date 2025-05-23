@@ -47,9 +47,3 @@ def compare_product_data(old_data: dict, new_data: dict) -> dict:
     result["image_changed"] = old_data.get("image_url") != new_data.get("image_url")
 
     return result
-
-
-if __name__ == "__main__":
-    old = {"price": "1 100.50 ₽", "quantity": "20", "image_url": "http://ex.com/1.jpg"}
-    new = {"price": "1 200,75 ₽", "quantity": "18", "image_url": "http://ex.com/2.jpg"}
-    print(compare_product_data(old, new))

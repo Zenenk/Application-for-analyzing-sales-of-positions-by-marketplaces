@@ -24,6 +24,7 @@ SessionLocal = sessionmaker(
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+
 # Добавление нового продукта в базу данных
 # product_data должен содержать ключи:
 # name, article, price, quantity, image_url,
@@ -49,8 +50,11 @@ def add_product(product_data: dict) -> Product:
             quantity=product_data.get("quantity", 0),
             image_url=product_data.get("image_url"),
 
+            marketplace=product_data.get("marketplace"),
+            category=product_data.get("category"),
             promotion_detected=product_data.get("promotion_detected", False),
             detected_keywords=product_data.get("detected_keywords", ""),
+            
 
             price_old=product_data.get("price_old"),
             price_new=product_data.get("price_new"),
@@ -90,13 +94,15 @@ def get_product_history(article: str):
         )
         history = []
         for p in rows:
+            ts_field = p.parsed_at or p.timestamp
             history.append({
-                "parsed_at": p.parsed_at.isoformat() if p.parsed_at else None,
+                "parsed_at": p.parsed_at.isoformat(),
                 "price": p.price,
                 "price_old": p.price_old,
                 "price_new": p.price_new,
                 "discount": p.discount,
                 "quantity": p.quantity,
+                "image_url": p.image_url,
             })
         return history
     finally:

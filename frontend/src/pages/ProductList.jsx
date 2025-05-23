@@ -1,9 +1,13 @@
-import React, { useContext, useState, useMemo } from 'react';
+import React, { useContext, useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ProductsContext } from '../components/ProductsProvider';
 import ProductCard from '../components/ProductCard';
+import API from '../services/api';
 
 export default function ProductList() {
+  const navigate = useNavigate();
   const { products = [], loading, error } = useContext(ProductsContext);
+  const [searchArticle, setSearchArticle] = useState('');
 
   // Фильтрующие состояния
   const [dateFrom, setDateFrom] = useState('');
@@ -12,20 +16,45 @@ export default function ProductList() {
   const [selectedMarketplaces, setSelectedMarketplaces] = useState([]);
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
+  const [allCategories, setAllCategories] = useState([]);
+  const [allMarketplaces, setAllMarketplaces] = useState([]);
 
-  // Динамически извлекаем варианты из загруженных продуктов
-  const categoriesList = useMemo(
-    () => Array.from(new Set(products.map(p => p.category).filter(Boolean))),
-    [products]
-  );
-  const marketplacesList = useMemo(
-    () => Array.from(new Set(products.map(p => p.marketplace).filter(Boolean))),
-    [products]
-  );
 
+  // отфильтрованный список
+  const filtered = searchArticle
+    ? products.filter(p => p.article.toString().includes(searchArticle.trim()))
+    : products;
+
+
+  // Сброс всех фильтров
+  const resetFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setSelectedCategories([]);
+    setSelectedMarketplaces([]);
+    setPriceMin('');
+    setPriceMax('');
+    setSearchArticle('');
+  };
+
+
+
+  useEffect(() => {
+    API.getCategories()
+      .then(data => setAllCategories(data))
+      .catch(console.error);
+    API.getMarketplaces()
+      .then(data => setAllMarketplaces(data))
+      .catch(console.error);
+  }, []);
+  
   // Фильтрация
   const filteredProducts = useMemo(() => {
     return products
+      .filter(p => {
+        if (!searchArticle) return true;
+        return p.article.toString().includes(searchArticle.trim());
+      })
       .filter(p => {
         if (dateFrom) {
           const d = p.parsed_at?.slice(0, 10) || '';
@@ -90,6 +119,15 @@ export default function ProductList() {
 
       {/* Панель фильтров */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 bg-white p-4 rounded shadow mb-6">
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Поиск по артикулу"
+            value={searchArticle}
+            onChange={e => setSearchArticle(e.target.value)}
+            className="border rounded px-3 py-2 w-full"
+          />
+        </div>
         <div>
           <label className="block text-sm">Дата от</label>
           <input type="date" className="mt-1 w-full border rounded"
@@ -102,22 +140,28 @@ export default function ProductList() {
         </div>
         <div>
           <label className="block text-sm">Категории</label>
-          <select multiple size={4} className="mt-1 w-full border rounded"
-            value={selectedCategories}
-            onChange={e => setSelectedCategories(
-              Array.from(e.target.selectedOptions, opt => opt.value)
-            )}>
-            {categoriesList.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+          <select multiple size={4}
+                  value={selectedCategories}
+                  onChange={e => setSelectedCategories(
+                    Array.from(e.target.selectedOptions, opt => opt.value)
+                  )}
+                  className="mt-1 w-full border rounded">
+            {allCategories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
           </select>
         </div>
         <div>
           <label className="block text-sm">Маркетплейсы</label>
-          <select multiple size={4} className="mt-1 w-full border rounded"
-            value={selectedMarketplaces}
-            onChange={e => setSelectedMarketplaces(
-              Array.from(e.target.selectedOptions, opt => opt.value)
-            )}>
-            {marketplacesList.map(mp => <option key={mp} value={mp}>{mp}</option>)}
+          <select multiple size={4}
+                  value={selectedMarketplaces}
+                  onChange={e => setSelectedMarketplaces(
+                    Array.from(e.target.selectedOptions, opt => opt.value)
+                  )}
+                  className="mt-1 w-full border rounded">
+            {allMarketplaces.map(mp => (
+              <option key={mp} value={mp}>{mp}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -133,6 +177,14 @@ export default function ProductList() {
             onChange={e => setPriceMax(e.target.value)} />
         </div>
       </div>
+      <div className="col-span-full flex justify-end">
+          <button
+          onClick={resetFilters}
+          className="bg-gray-200 text-gray-800 px-3 py-1 rounded hover:bg-gray-300"
+        >
+          Сбросить фильтры
+        </button>
+      </div>
 
       {/* Статистика */}
       {isFiltered && (
@@ -146,9 +198,22 @@ export default function ProductList() {
       {/* Результаты */}
       {!isFiltered ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {products.map(p => (
-            <ProductCard key={`${p.timestamp}-${p.article}`} product={p} />
-          ))}
+          {filteredProducts.length > 0 ? (
+            filteredProducts
+              .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+              .map(p => (
+                <ProductCard
+                  key={`${p.timestamp}-${p.article}`}
+                  product={p}
+                  filterCategory={selectedCategories[0] || null}
+                  filterMarketplace={selectedMarketplaces[0] || null}
+                />
+              ))
+          ) : (
+            <p className="col-span-full text-center text-gray-500">
+              Ничего не найдено.
+            </p>
+          )}
         </div>
       ) : (
         Object.entries(groupedByCategory).map(([cat, items]) => (
@@ -166,15 +231,25 @@ export default function ProductList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map(item => (
-                    <tr key={`${item.timestamp}-${item.article}`} className="border-t">
-                      <td className="px-4 py-2">{item.article}</td>
-                      <td className="px-4 py-2">{item.name}</td>
-                      <td className="px-4 py-2 text-right">{item.price}</td>
-                      <td className="px-4 py-2 text-right">{item.discount || '—'}</td>
-                      <td className="px-4 py-2">{new Date(item.parsed_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
+                  {items
+                    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                    .map(item => (
+                      <tr
+                        key={`${item.timestamp}-${item.article}`}
+                        className="border-t hover:bg-gray-50 cursor-pointer"
+                        onClick={() => navigate(`/product/${item.id}`)}
+                      >
+                        <td className="px-4 py-2">{item.article}</td>
+                        <td className="px-4 py-2">{item.name}</td>
+                        <td className="px-4 py-2 text-right">{item.price}</td>
+                        <td className="px-4 py-2 text-right">
+                          {item.discount || '—'}
+                        </td>
+                        <td className="px-4 py-2">
+                          {new Date(item.parsed_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>

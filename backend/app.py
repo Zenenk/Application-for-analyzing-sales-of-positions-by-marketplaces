@@ -9,14 +9,18 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from threading import Thread
 import threading
-
+from flask import jsonify
+from sqlalchemy import distinct
+import glob
+from datetime import datetime
+from io import StringIO
+from flask import Response
 
 from backend.config_parser import read_config
-from backend.database import init_db, add_product, get_products, get_product_history
+from backend.database import init_db, add_product, get_products, get_product_history, SessionLocal, Product
 from backend.scraper import scrape_marketplace
 from backend.promo_detector import PromoDetector
-from backend.exporter import export_to_csv, export_to_pdf, export_product_pdf
-from backend.screenshot_importer import import_from_screenshot
+from backend.exporter import export_to_csv, export_to_pdf, export_product_pdf, CSV_RESULTS, PDF_RESULTS
 from backend.schedule_manager import update_schedule_interval, start_scheduler
 from backend.utils.marketplace_urls import build_search_url, build_product_url
 
@@ -257,7 +261,7 @@ def _run_start(urls, categories, articles, limit, save_to_db, marketplace):
     """
     Собирает те же шаги, что раньше в start(): парсинг, анализ промо, BД и экспорт.
     """
-    logger.info(f"🟢 [Background] _run_start kicked off: marketplace={marketplace}, urls={urls}")
+    logger.info(f"🟢 [Background] _run_start kicked off: marketplace={marketplace}, urls={urls}, category={categories}")
     all_products = []
     for url in urls:
         logger.info(f"  → Scraping {url}")
@@ -327,7 +331,7 @@ def import_csv_route():
     with open(save_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         required = [
-            "name","article","price","quantity",
+            "name","article","price","quantity", "marketplace", "category",
             "price_old","price_new","discount","promo_labels",
             "promotion_detected","detected_keywords","parsed_at"
         ]
@@ -370,10 +374,10 @@ def products_route():
             "price": p.price,
             "quantity": p.quantity,
             "image_url": p.image_url,
+            "marketplace": p.marketplace,
+            "category":    p.category,
             "promotion_detected": p.promotion_detected,
             "detected_keywords": p.detected_keywords.split(";") if p.detected_keywords else [],
-            "marketplace": getattr(p, 'marketplace', None),
-            "category": getattr(p, 'category', None),
             "price_old": p.price_old,
             "price_new": p.price_new,
             "discount": p.discount,
@@ -382,6 +386,36 @@ def products_route():
             "timestamp": p.timestamp.isoformat(),
         })
     return jsonify(output)
+
+# Список уникальных категорий из БД
+@app.route("/categories", methods=["GET"])
+def categories_route():
+    session = SessionLocal()
+    try:
+        # всё, что не пустая строка и не None
+        cats = (
+            session.query(distinct(Product.category))
+            .filter(Product.category != None, Product.category != "")
+            .order_by(Product.category)
+            .all()
+        )
+        return jsonify([c[0] for c in cats])
+    finally:
+        session.close()
+
+@app.route("/marketplaces", methods=["GET"])
+def marketplaces_route():
+    session = SessionLocal()
+    try:
+        mps = (
+            session.query(distinct(Product.marketplace))
+            .filter(Product.marketplace != None, Product.marketplace != "")
+            .order_by(Product.marketplace)
+            .all()
+        )
+        return jsonify([m[0] for m in mps])
+    finally:
+        session.close()
 
 @app.route("/products/history/<string:article>", methods=["GET"])
 def product_history(article):
@@ -394,21 +428,6 @@ def product_history(article):
         logger.error(f"Error getting history for {article}: {e}")
         return jsonify({"error": "Внутренняя ошибка"}), 500
 
-@app.route("/export/product/<string:article>", methods=["GET"])
-def export_product_report(article):
-    try:
-        filepath = export_product_pdf(article)
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=os.path.basename(filepath),
-            mimetype="application/pdf"
-        )
-    except FileNotFoundError:
-        abort(404, description="История товара не найдена")
-    except Exception as e:
-        logger.error(f"Error exporting product PDF {article}: {e}")
-        abort(500, description="Ошибка формирования отчёта")
 
 @app.route("/dashboard", methods=["GET"])
 def dashboard_route():
@@ -444,41 +463,115 @@ def reports_route():
             reports.append({"id": "pdf", "title": "PDF отчёт"})
     return jsonify(reports)
 
+@app.route("/export/product/<string:article>", methods=["GET"])
+def export_product_report(article):
+    try:
+        # Генерируем имя файла в нужном формате
+        today = datetime.now().strftime("%d_%m_%Y")
+        filename = f"товар_{article}_{today}.pdf"
+        filepath = os.path.join(PDF_RESULTS, filename)
+
+        # Если файла ещё нет — создаём его
+        if not os.path.isfile(filepath):
+            filepath = export_product_pdf(article, path=filepath)
+
+        return send_file(
+            filepath,
+            as_attachment=True,
+            download_name=os.path.basename(filepath),
+            mimetype="application/pdf"
+        )
+    except FileNotFoundError:
+        # если истории на самом деле нет
+        abort(404, description="История товара не найдена")
+    except Exception as e:
+        app.logger.error(f"Error exporting product PDF {article}: {e}", exc_info=True)
+        abort(500, description="Ошибка формирования отчёта")
+
+
 @app.route("/download/<kind>", methods=["GET"])
-def download_route(kind):
+def download_report(kind):
+    """
+    kind = 'csv' или 'pdf' — отдает самый свежий файл из папок csv_results/pdf_results
+    """
     if kind not in ("csv", "pdf"):
-        abort(400, description="Недопустимый формат: ожидается csv или pdf")
-    dir_map = {"csv": "csv_results", "pdf": "pdf_results"}
-    directory = dir_map[kind]
-    if not os.path.isdir(directory):
-        abort(404, description="Каталог отчётов не найден")
-    files = [f for f in os.listdir(directory) if f.endswith(f".{kind}")]
+        abort(404)
+    folder = CSV_RESULTS if kind == "csv" else PDF_RESULTS
+    pattern = os.path.join(folder, f"*.{kind}")
+    files = glob.glob(pattern)
     if not files:
-        abort(404, description="Отчёты не найдены")
+        abort(404, description=f"No {kind.upper()} reports yet")
     latest = sorted(files)[-1]
-    path = os.path.join(directory, latest)
+    mime = "text/csv" if kind == "csv" else "application/pdf"
     return send_file(
-        path,
+        latest,
         as_attachment=True,
-        download_name=latest,
-        mimetype=f"application/{'csv' if kind=='csv' else 'pdf'}"
+        download_name=os.path.basename(latest),
+        mimetype=mime
     )
 
-@app.route("/import/screenshot", methods=["POST"])
-def import_screenshot_route():
-    image = request.files.get("image")
-    marketplace = request.form.get("marketplace")
-    if not image or not marketplace:
-        return jsonify({"error": "Нужны поля image и marketplace"}), 400
-    os.makedirs("uploads", exist_ok=True)
-    filename = secure_filename(image.filename)
-    tmp_path = os.path.join("uploads", filename)
-    image.save(tmp_path)
-    try:
-        import_from_screenshot(tmp_path, marketplace.lower())
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+@app.route("/export/csv", methods=["GET"])
+def export_csv_from_db():
+    prods = get_products()  # ORM-модели Product
+    # Подготовим in-memory CSV
+    si = StringIO()
+    fieldnames = [
+        "id", "name", "article", "price", "quantity", "image_url",
+        "price_old", "price_new", "discount", "promo_labels",
+        "promotion_detected", "detected_keywords", "parsed_at", "timestamp"
+    ]
+    writer = csv.DictWriter(si, fieldnames=fieldnames)
+    writer.writeheader()
+    for p in prods:
+        writer.writerow({
+            "id": p.id,
+            "name": p.name,
+            "article": p.article,
+            "price": p.price,
+            "quantity": p.quantity,
+            "image_url": p.image_url,
+            "price_old": p.price_old,
+            "price_new": p.price_new,
+            "discount": p.discount,
+            "promo_labels": p.promo_labels or "",
+            "promotion_detected": p.promotion_detected,
+            "detected_keywords": p.detected_keywords or "",
+            "parsed_at": p.parsed_at.isoformat() if p.parsed_at else "",
+            "timestamp": p.timestamp.isoformat()
+        })
+    output = si.getvalue().encode("utf-8-sig")
+    si.close()
+
+    return Response(
+        output,
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment;filename=products_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        }
+    )
+
+
+@app.route("/export/pdf", methods=["GET"])
+def export_pdf_from_db():
+    prods = [ 
+        { 
+          "name": p.name,
+          "article": p.article,
+          # ... остальные поля ...
+          "parsed_at": p.parsed_at.isoformat() if p.parsed_at else ""
+        }
+        for p in get_products()
+    ]
+    # воспользуемся вашей функцией export_to_pdf, но передав path=None
+    pdf_path = export_to_pdf(prods, path=None)
+    return send_file(
+        pdf_path,
+        as_attachment=True,
+        download_name=os.path.basename(pdf_path),
+        mimetype="application/pdf"
+    )
+
 
 # Обновление интервала выполнения фоновых задач
 @app.route("/schedule", methods=["POST"])

@@ -2,11 +2,13 @@ import logging
 import re
 import time
 import random
+from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from urllib.parse import urljoin
 from backend.utils.marketplace_urls import build_search_url, build_product_url
 import requests
 import urllib.parse
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 # Вспомогательная JS-функция для encodeURIComponent
@@ -264,11 +266,12 @@ class MarketplaceScraper:
 
 
 
-    def _scrape_ozon_category_by_url(self, url: str, limit: int):
+    def _scrape_ozon_category_by_url(self, url: str, limit: int, marketplace: str, categories: list[str]):
         """
         Скрапинг категории Ozon по готовому URL через встроенный JSON-API в контексте
         браузера (чтобы автоматически передать все антибот-куки и заголовки).
         """
+        logger.info(f"[OZON-CAT] marketplace={marketplace!r}, categories={categories!r}")
         logger.info(f"[OZON-CAT] {url} ⏳")
         page = self._context.new_page()
         products = []
@@ -340,10 +343,13 @@ class MarketplaceScraper:
                     "price":         new_p,
                     "quantity":      qty,
                     "image_url":     img_url,
+                    "marketplace":   "Ozon",    # например "Wildberries" или "Ozon"
+                    "category":      categories[0],
                     "price_new":     new_p,
                     "price_old":     old_p,
                     "discount":      f"{disc}%" if disc is not None else None,
-                    "promo_labels":  promo_lbl
+                    "promo_labels":  promo_lbl,
+                    "parsed_at":     datetime.utcnow().isoformat()
                 })
 
         except Exception:
@@ -364,7 +370,8 @@ class MarketplaceScraper:
 
 
 
-    def _scrape_wb_category_by_url(self, url: str, limit: int):
+    def _scrape_wb_category_by_url(self, url: str, limit: int, marketplace: str, categories: list[str]):
+        logger.info(f"[WB-CAT] marketplace={marketplace!r}, categories={categories!r}")
         logger.info(f"[WB-CAT] {url} ⏳")
         page = self._context.new_page()
         products = []
@@ -388,10 +395,11 @@ class MarketplaceScraper:
                 # вытаскиваем артикул из URL
                 m = re.search(r"/catalog/(\d+)/", href)
                 article = m.group(1) if m else None
-                # изображение
-                img = card.locator(
-                    "div.product-card__top-wrap > div.product-card__img-wrap.img-plug.j-thumbnail-wrap > img"
-                ).get_attribute("src") or None
+                #первое изображение
+                try:
+                    img = card.locator("img").nth(0).get_attribute("src")
+                except Exception:
+                    img = None
                 # название категории-товара
                 brand = card.locator("span.product-card__brand").text_content().strip() or ''
                 name_part = card.locator("span.product-card__name").text_content().strip() or ''
@@ -439,10 +447,13 @@ class MarketplaceScraper:
                         "price":       new_price,
                         "quantity":    "",           # WB в категории не показывает остатки
                         "image_url":   img,
+                        "marketplace": "Wildberries",    # например "Wildberries" или "Ozon"
+                        "category":    categories[0],
                         "price_new":   new_price,
                         "price_old":   old_price,
                         "discount":    discount,
-                        "promo_labels": promo_labels
+                        "promo_labels": promo_labels,
+                        "parsed_at":     datetime.utcnow().isoformat()
                     })
                 else:
                     logger.warning(f"[WB-CAT] не нашли артикул в карточке #{i}")
@@ -454,6 +465,174 @@ class MarketplaceScraper:
         finally:
             page.close()
         return products
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def _scrape_wb_article(self, url: str, marketplace: str, categories: list[str]) -> dict:
+        """
+        Скрапинг страницы товара Wildberries по прямой ссылке.
+        Возвращает один словарь с данными товара.
+        """
+        logger.info(f"[WB-ART] marketplace={marketplace!r}, categories={categories!r}")
+        logger.info(f"[WB-ART] {url} ⏳")
+        page = self._context.new_page()
+        result = {
+            "url":         url,
+            "name":        None,
+            "article":     None,
+            "price":       None,
+            "quantity":    None,
+            "image_url":   None,
+            "price_old":   None,
+            "price_new":   None,
+            "discount":    None,
+            "promo_labels":[],
+            "marketplace": marketplace,
+            "category":    categories[0] if categories else None,
+            "parsed_at":   datetime.utcnow().isoformat()
+        }
+        try:
+            # Anti-bot
+            self._human_mouse_move(page)
+            page.keyboard.press(random.choice(["Tab", "ArrowDown", "ArrowUp"]))
+            self._human_delay(0.5, 1.5)
+
+            page.goto(url, timeout=30000)
+            page.wait_for_load_state("networkidle", timeout=15000)
+            html = page.content()
+            # --- DEBUG: raw HTML snippet around the category link ---
+            start = html.find('<a class="product-page__category-link"')
+            end = html.find('</a>', start) + 4 if start != -1 else -1
+            if start != -1 and end != -1:
+                snippet = html[start:end]
+                logger.debug("[WB-ART] RAW HTML SNIPPET:\n%s", snippet)
+            else:
+                logger.debug("[WB-ART] RAW HTML SNIPPET not found")
+            # 1) Категория
+            try:
+                # ждём до 5 сек, пока появится ссылка на категорию
+                page.wait_for_selector(
+                    "a.product-page__link--category-catalog span.product-page__link-category",
+                    timeout=5000
+                )
+
+                # выбираем первый такой спан
+                cat = (
+                    page
+                    .locator("a.product-page__link--category-catalog span.product-page__link-category")
+                    .nth(0)
+                    .text_content()
+                )
+                if cat:
+                    result["category"] = cat.strip()
+                else:
+                    logger.warning("[WB-ART] span.product-page__link-category пустой")
+            except Exception:
+                logger.warning("[WB-ART] не удалось найти категорию — проверьте селектор")
+
+
+            # 2) Бренд + название
+            try:
+                brand = page.locator("a.product-page__header-brand").text_content().strip()
+            except Exception:
+                brand = None
+            try:
+                title = page.locator("h1.product-page__title").text_content().strip()
+            except Exception:
+                title = None
+            if brand and title:
+                result["name"] = f"{brand} \\ {title}"
+            else:
+                result["name"] = title or result.get("name")
+
+            # 3) Артикул: data-nm-id или из URL
+            try:
+                art = page.locator("h1.product-page__title").get_attribute("data-nm-id")
+                if art and art.isdigit():
+                    result["article"] = art
+            except Exception:
+                pass
+            if not result["article"]:
+                m = re.search(r"/(\d+)/", url)
+                result["article"] = m.group(1) if m else None
+
+            # 4) Изображение: из zoom-container или галереи
+            try:
+                img = page.locator(
+                    "div.zoom-image-container img.j-zoom-image, div.product-page__gallery img"
+                ).nth(0).get_attribute("src")
+                result["image_url"] = img
+            except Exception:
+                pass
+
+            # 5) Цена и старая цена
+            try:
+                # новая цена
+                sel = page.locator(
+                    "span.price-block__wallet-price.red-price, span.price-block__current-price"
+                ).nth(0)
+                txt = sel.text_content().strip()
+                num = re.sub(r"[^\d,\.]+", "", txt).replace(",", ".")
+                result["price_new"] = float(num)
+                result["price"] = result["price_new"]
+            except Exception:
+                pass
+            try:
+                old_txt = page.locator("del.price-block__old-price span").nth(0).text_content().strip()
+                old_num = re.sub(r"[^\d,\.]+", "", old_txt).replace(",", ".")
+                result["price_old"] = float(old_num)
+            except Exception:
+                pass
+
+            # 6) Скидка
+            if result.get("price_old") and result.get("price_new") is not None:
+                pct = (result["price_old"] - result["price_new"]) / result["price_old"] * 100
+                result["discount"] = f"{round(pct)}%"
+
+            # 7) Количество (если есть)
+            try:
+                qty_txt = page.locator(".stock-count__text").text_content().strip()
+                result["quantity"] = re.sub(r"[^\d]", "", qty_txt)
+            except Exception:
+                pass
+
+            # 8) Промо-лейблы: dedupe sale и good-price
+            labels = []
+            try:
+                sale = page.locator("div.spec-action a.spec-action__link").all_text_contents()
+                labels += [t.strip() for t in sale if t.strip()]
+            except Exception:
+                pass
+            try:
+                good = page.locator("div.badge--good-price span.badge__text").all_text_contents()
+                labels += [t.strip() for t in good if t.strip()]
+            except Exception:
+                pass
+            # удаляем дубли
+            result["promo_labels"] = list(dict.fromkeys(labels))
+
+        except Exception:
+            logger.exception(f"Error scraping WB article {url}")
+        finally:
+            page.close()
+
+        return result
+
+
+
 
 
 
@@ -470,9 +649,11 @@ def scrape_marketplace(
     mp = MarketplaceScraper()
     try:
         if "ozon.ru/category/" in url:
-            prods = mp._scrape_ozon_category_by_url(url, limit)
+            prods = mp._scrape_ozon_category_by_url(url, limit, marketplace, category_filter or [])
         elif "wildberries.ru/catalog/0/search.aspx" in url:
-            prods = mp._scrape_wb_category_by_url(url, limit)
+            prods = mp._scrape_wb_category_by_url(url, limit, marketplace, category_filter or [])
+        elif re.search(r"wildberries\.ru/catalog/\d+/", url):
+            prods = [ mp._scrape_wb_article(url, marketplace, category_filter or []) ]
         else:
             mpn = "ozon" if "ozon.ru" in url else "wildberries"
             prods = [ mp.scrape_product(mpn, url) ]

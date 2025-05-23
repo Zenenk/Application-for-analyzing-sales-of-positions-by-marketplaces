@@ -14,28 +14,26 @@ function ReportsPage() {
       });
   }, []);
 
-  if (error)   return <div className="text-red-600">{error}</div>;
+  if (error)    return <div className="text-red-600">{error}</div>;
   if (!reports) return <div>Загрузка отчётов...</div>;
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Отчёты</h1>
-      {Array.isArray(reports) ? (
-        <ul className="list-disc pl-5 mb-4">
-          {reports.map(r => <li key={r.id}>{r.title || r.name}</li>)}
-        </ul>
-      ) : (
-        <pre>{JSON.stringify(reports, null, 2)}</pre>
-      )}
+      <ul className="list-disc pl-5 mb-4">
+        {reports.map(r => (
+          <li key={r.id}>{r.title || r.name}</li>
+        ))}
+      </ul>
       <div className="space-x-2">
         <button
-          onClick={API.downloadPdf}
+          onClick={() => API.exportPdf()}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
           Скачать PDF
         </button>
         <button
-          onClick={API.downloadCsv}
+          onClick={() => API.exportCsv()}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
         >
           Скачать CSV

@@ -25,13 +25,6 @@ const SettingsPage = () => {
   const [csvMessage, setCsvMessage]             = useState(null);
   const [csvError, setCsvError]                 = useState(null);
 
-  // Импорт скриншота
-  const [screenshotFile, setScreenshotFile]             = useState(null);
-  const [screenshotMarketplace, setScreenshotMarketplace] = useState('Ozon');
-  const [importingScreenshot, setImportingScreenshot]     = useState(false);
-  const [screenshotMessage, setScreenshotMessage]         = useState(null);
-  const [screenshotError, setScreenshotError]             = useState(null);
-
   return (
     <div className="p-4 space-y-8">
       {/* Настройки парсинга */}
@@ -126,7 +119,7 @@ const SettingsPage = () => {
               };
               const result = await API.startProcess(settings);
               setStartMessage(
-                `Успешно: получено ${result.products?.length ?? 0} товаров.`
+                `Парсинг успешно начался!`
               );
             } catch (err) {
               setStartError(
@@ -182,54 +175,6 @@ const SettingsPage = () => {
         {csvError && <div className="text-red-600">{csvError}</div>}
       </div>
 
-      {/* Импорт скриншота */}
-      <div className="space-y-4 border p-4 rounded">
-        <h2 className="text-lg font-bold">Импорт из скриншота</h2>
-        <div>
-          <label className="block">Маркетплейс</label>
-          <select
-            value={screenshotMarketplace}
-            onChange={e => setScreenshotMarketplace(e.target.value)}
-            className="border rounded px-2 py-1 w-full"
-          >
-            <option value="Ozon">Ozon</option>
-            <option value="Wildberries">Wildberries</option>
-          </select>
-        </div>
-        <input
-          type="file"
-          accept="image/png, image/jpeg"
-          onChange={e => setScreenshotFile(e.target.files[0])}
-          className="border px-2 py-1 rounded w-full"
-        />
-        <button
-          onClick={async () => {
-            setScreenshotMessage(null);
-            setScreenshotError(null);
-            setImportingScreenshot(true);
-            try {
-              await API.importScreenshot(
-                screenshotFile,
-                screenshotMarketplace
-              );
-              setScreenshotMessage('Скриншот успешно импортирован.');
-            } catch (err) {
-              setScreenshotError(
-                'Ошибка импорта скриншота: ' +
-                (err.response?.data?.error || err.message)
-              );
-            } finally {
-              setImportingScreenshot(false);
-            }
-          }}
-          disabled={importingScreenshot}
-          className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600"
-        >
-          {importingScreenshot ? 'Импортируем...' : 'Загрузить скриншот'}
-        </button>
-        {screenshotMessage && <div className="text-green-600">{screenshotMessage}</div>}
-        {screenshotError && <div className="text-red-600">{screenshotError}</div>}
-      </div>
     </div>
   );
 };

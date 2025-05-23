@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // Базовый URL для всех запросов: '/api' или переопределяемый через env
-axios.defaults.baseURL = process.env.REACT_APP_API_BASE || '/api';
+axios.defaults.baseURL = 'http://localhost:5001';
 
 const API = {
   // Запуск процесса парсинга с JSON-конфигом
@@ -21,30 +21,46 @@ const API = {
     return res.data;
   },
 
-  // Импорт из скриншота
-  importScreenshot: async (imageFile, marketplace) => {
-    const fd = new FormData();
-    fd.append('image', imageFile);
-    fd.append('marketplace', marketplace);
-    const res = await axios.post('/import/screenshot', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return res.data;
-  },
 
   // Получить список продуктов
   getProductList: async () => {
+    console.log('➡️ GET', axios.defaults.baseURL + '/products');
     const res = await axios.get('/products');
+    console.log('⬅️', res.status, res.data);
     return res.data;
   },
 
-  // Получить историю по артикулу
   getProductHistory: async (article) => {
-    const res = await axios.get(
-      `/products/history/${encodeURIComponent(article)}`
-    );
+    const url = `/products/history/${encodeURIComponent(article)}`;
+    console.log('➡️ GET', axios.defaults.baseURL + url);
+    try {
+      const res = await axios.get(url);
+      console.log('⬅️', res.status, res.data);
+      return res.data;
+    } catch (err) {
+      console.error('❌ HISTORY ERROR', err.response?.status, err.response?.data);
+      throw err;
+    }
+  },
+
+  // Список доступных отчётов
+  getReports: async () => {
+    const res = await axios.get('/reports');
     return res.data;
   },
+
+
+
+  // Скачать из БД сразу новый CSV
+  exportCsv: () => {
+    window.open(`${axios.defaults.baseURL}/export/csv`, '_blank');
+  },
+
+  // Скачать из БД сразу новый PDF
+  exportPdf: () => {
+    window.open(`${axios.defaults.baseURL}/export/pdf`, '_blank');
+  },
+
 
   // Общие метрики дашборда
   getDashboard: async () => {
@@ -52,9 +68,17 @@ const API = {
     return res.data;
   },
 
-  // Список доступных отчётов
-  getReports: async () => {
-    const res = await axios.get('/reports');
+  
+  // Список уникальных категорий из БД
+  getCategories: async () => {
+    const res = await axios.get('/categories');
+    return res.data;
+  },
+  
+
+  // Список уникальных маркетплейсов из БД
+  getMarketplaces: async () => {
+    const res = await axios.get('/marketplaces');
     return res.data;
   },
 
@@ -65,9 +89,7 @@ const API = {
 
   // URL для экспорта PDF по товару
   exportProductUrl: (article) => {
-    return `${axios.defaults.baseURL}/export/product/${encodeURIComponent(
-      article
-    )}`;
+    return `${axios.defaults.baseURL}/export/product/${encodeURIComponent(article)}`;
   },
 
   // Изменить расписание
