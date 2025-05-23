@@ -1,8 +1,12 @@
 // frontend/src/services/api.js
+// Базовый URL для всех запросов: '/api' или переопределяемый через env
 import axios from 'axios';
 
-// Базовый URL для всех запросов: '/api' или переопределяемый через env
-axios.defaults.baseURL = 'http://localhost:5001';
+const host = window.location.hostname;       // "80.237.33.113"
+const protocol = window.location.protocol;   // "http:"
+const API_PORT = process.env.REACT_APP_API_PORT || '5001';
+
+axios.defaults.baseURL = `${protocol}//${host}:${API_PORT}`;
 
 const API = {
   // Запуск процесса парсинга с JSON-конфигом
